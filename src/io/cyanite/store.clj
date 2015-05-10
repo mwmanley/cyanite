@@ -26,8 +26,9 @@
 ;; hayt
 
 (defn insertq
-  "Yields a cassandra prepared statement of 6 arguments:
+  "Yields a cassandra prepared statement of 7 arguments:
 
+* `table`: name of the rollup table
 * `ttl`: how long to keep the point around
 * `metric`: the data point
 * `rollup`: interval between points at this resolution
@@ -38,12 +39,13 @@
   (alia/prepare
    session
    (str
-    "UPDATE metric USING TTL ? SET data = data + ? "
+    "UPDATE ? USING TTL ? SET data = data + ? "
     "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;")))
 
 (defn fetchq
-  "Yields a cassandra prepared statement of 6 arguments:
+  "Yields a cassandra prepared statement of 7 arguments:
 
+* `table`: name of the rollup table
 * `paths`: list of paths
 * `rollup`: interval between points at this resolution
 * `period`: rollup multiplier which determines the time to keep points for
@@ -54,7 +56,7 @@
   (alia/prepare
    session
    (str
-    "SELECT path,data,time FROM metric WHERE "
+    "SELECT path,data,time FROM ? WHERE "
     "path IN ? AND tenant = '' AND rollup = ? AND period = ? "
     "AND time >= ? AND time <= ? ORDER BY time ASC;")))
 

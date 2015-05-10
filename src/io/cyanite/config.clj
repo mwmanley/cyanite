@@ -51,15 +51,17 @@
       (throw (ex-info (str "unknown rollup unit: " unit) {})))))
 
 (defn convert-shorthand-rollup
-  "Converts an individual rollup to a {:rollup :period :ttl} tri"
+  "Converts an individual rollup to a {:rollup :period :ttl :table} tri"
   [rollup]
   (if (string? rollup)
     (let [[rollup-string retention-string] (split rollup #":" 2)
           rollup-secs (to-seconds rollup-string)
-          retention-secs (to-seconds retention-string)]
+          retention-secs (to-seconds retention-string)
+	  rollup-table ]
       {:rollup rollup-secs
        :period (/ retention-secs rollup-secs)
-       :ttl (* rollup-secs (/ retention-secs rollup-secs))})
+       :ttl (* rollup-secs (/ retention-secs rollup-secs))
+       :table rollup-table ('metric')})
     rollup))
 
 (defn convert-shorthand-rollups
