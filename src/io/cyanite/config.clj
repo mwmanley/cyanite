@@ -57,12 +57,13 @@
     (let [[rollup-string retention-string] (split rollup #":" 2)
           rollup-secs (to-seconds rollup-string)
           retention-secs (to-seconds retention-string)
-	  rollup-table ]
+	  table "metric"]
       {:rollup rollup-secs
        :period (/ retention-secs rollup-secs)
        :ttl (* rollup-secs (/ retention-secs rollup-secs))
-       :table rollup-table ('metric')})
+       :table "metric"})
     rollup))
+  (debug "table: " :table)
 
 (defn convert-shorthand-rollups
   "Where a rollup has been given in Carbon's shorthand form

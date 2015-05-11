@@ -25,38 +25,37 @@
 ;; cyanite relies on very few queries, I decided against using
 ;; hayt
 
-(defn insertq
-  "Yields a cassandra prepared statement of 7 arguments:
+(defn insertq 
+  "Yields a cassandra prepared statement of 6 arguments:
 
-* `table`: name of the rollup table
 * `ttl`: how long to keep the point around
 * `metric`: the data point
 * `rollup`: interval between points at this resolution
 * `period`: rollup multiplier which determines the time to keep points for
 * `path`: name of the metric
 * `time`: timestamp of the metric, should be divisible by rollup"
-  [session]
+  [session table]
+  (debug "table is" table)
   (alia/prepare
    session
    (str
-    "UPDATE ? USING TTL ? SET data = data + ? "
+    "UPDATE " table " USING TTL ? SET data = data + ? "
     "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;")))
 
 (defn fetchq
-  "Yields a cassandra prepared statement of 7 arguments:
+  "Yields a cassandra prepared statement of 6 arguments:
 
-* `table`: name of the rollup table
 * `paths`: list of paths
 * `rollup`: interval between points at this resolution
 * `period`: rollup multiplier which determines the time to keep points for
 * `min`: return points starting from this timestamp
 * `max`: return points up to this timestamp
 * `limit`: maximum number of points to return"
-  [session]
+  [session table]
   (alia/prepare
    session
    (str
-    "SELECT path,data,time FROM ? WHERE "
+    "SELECT path,data,time FROM " table " WHERE "
     "path IN ? AND tenant = '' AND rollup = ? AND period = ? "
     "AND time >= ? AND time <= ? ORDER BY time ASC;")))
 
@@ -147,14 +146,15 @@
            chan_size 10000
            batch_size 500}}]
   (info "creating cassandra metric store")
-(let [cluster (if (sequential? cluster) cluster [cluster])
+(let [cluster (if (sequential? cluster) cluster [cluster]) 
+      table "metric"
       session (-> {:contact-points cluster}
           (cond-> (and username password)
                    (assoc :credentials {:user username :password password}))
           (alia/cluster)
           (alia/connect keyspace))
-        insert! (insertq session)
-        fetch!  (fetchq session)]
+        insert! (insertq session table)
+        fetch!  (fetchq session table)]
     (reify
       Metricstore
       (channel-for [this]
@@ -178,7 +178,7 @@
           ch))
       (insert [this ttl data tenant rollup period path time]
         (alia/execute-chan
-         session
+         session 
          insert!
          {:values [ttl data tenant rollup period path time]}))
       (fetch [this agg paths tenant rollup period from to]

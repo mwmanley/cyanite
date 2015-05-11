@@ -28,13 +28,15 @@
           timel (parse-num #(Long/parseLong %) "nan" time)
           metricd (parse-num #(Double/parseDouble %) "nan" metric)]
       (when (and (not= "nan" metricd) (not= "nan" timel))
-          (for [{:keys [rollup period ttl rollup-to]} rollups]
+          (for [{:keys [rollup period ttl table rollup-to]} rollups]
             {:path   path
+	     :table  table
              :rollup rollup
              :period period
              :ttl    (or ttl (* rollup period))
              :time   (rollup-to timel)
              :metric metricd})))
+      (debug "table is:" :table)
       (catch Exception e
           (info "Exception for metric [" input "] : " e))))
 
