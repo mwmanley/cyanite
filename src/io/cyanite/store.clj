@@ -151,13 +151,10 @@
   [session inserts]
   (let [b (BatchStatement.)]
     (doseq [i inserts]
-     (debug "i is now: " i)
-      (let [ [sql values] i ]
-      (debug "s is: " sql "v is: " values)
+      (let [ [sql v] i ]
       (let [^PreparedStatement s (alia/prepare session sql)] 
-        (doseq [v values]
-	(debug "s is now: " s "v is now: " values)
-        (.add b (.bind s (into-array Object v)))))))
+	(debug "sql is: " sql " and v is now: " v)
+        (.add b (.bind s (into-array Object v))))))
   b))
 
 (defn cassandra-metric-store
