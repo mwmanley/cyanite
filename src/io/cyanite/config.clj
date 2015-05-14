@@ -63,7 +63,6 @@
        :ttl (* rollup-secs (/ retention-secs rollup-secs))
        :table "metric"})
     rollup))
-  (debug "table: " :table)
 
 (defn convert-shorthand-rollups
   "Where a rollup has been given in Carbon's shorthand form

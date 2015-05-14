@@ -25,6 +25,15 @@
 ;; cyanite relies on very few queries, I decided against using
 ;; hayt
 
+; Take a dynamic table name for creating a prepared statement in the 
+; later code
+(defn makeinsertstrq
+  [table]
+   (str
+    "UPDATE " table 
+    " USING TTL ? SET data = data + ? "
+    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
+
 (defn insertq 
   "Yields a cassandra prepared statement of 6 arguments:
 
@@ -34,13 +43,14 @@
 * `period`: rollup multiplier which determines the time to keep points for
 * `path`: name of the metric
 * `time`: timestamp of the metric, should be divisible by rollup"
-  [session table]
-  (debug "table is" table)
+  [session]
+  (let [table "metric"] 
   (alia/prepare
    session
    (str
-    "UPDATE " table " USING TTL ? SET data = data + ? "
-    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;")))
+    "UPDATE " table 
+    " USING TTL ? SET data = data + ? "
+    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))))
 
 (defn fetchq
   "Yields a cassandra prepared statement of 6 arguments:
@@ -51,14 +61,14 @@
 * `min`: return points starting from this timestamp
 * `max`: return points up to this timestamp
 * `limit`: maximum number of points to return"
-  [session table]
+  [session]
+  (let [table "metric"] 
+  (debug "table is" table)
   (alia/prepare
    session
    (str
-    "SELECT path,data,time FROM " table " WHERE "
-    "path IN ? AND tenant = '' AND rollup = ? AND period = ? "
-    "AND time >= ? AND time <= ? ORDER BY time ASC;")))
-
+    "SELECT path,data,time FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
+    "AND time >= ? AND time <= ? ORDER BY time ASC;"))))
 
 (defn useq
   "Yields a cassandra use statement for a keyspace"
@@ -137,6 +147,19 @@
       (.add b (.bind s (into-array Object v))))
     b))
 
+(defn- makebatch
+  [session inserts]
+  (let [b (BatchStatement.)]
+    (doseq [i inserts]
+     (debug "i is now: " i)
+      (let [ [sql values] i ]
+      (debug "s is: " sql "v is: " values)
+      (let [^PreparedStatement s (alia/prepare session sql)] 
+        (doseq [v values]
+	(debug "s is now: " s "v is now: " values)
+        (.add b (.bind s (into-array Object v)))))))
+  b))
+
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
@@ -147,14 +170,13 @@
            batch_size 500}}]
   (info "creating cassandra metric store")
 (let [cluster (if (sequential? cluster) cluster [cluster]) 
-      table "metric"
       session (-> {:contact-points cluster}
           (cond-> (and username password)
                    (assoc :credentials {:user username :password password}))
           (alia/cluster)
           (alia/connect keyspace))
-        insert! (insertq session table)
-        fetch!  (fetchq session table)]
+	  insert! (insertq session)
+	  fetch!  (fetchq session)]
     (reify
       Metricstore
       (channel-for [this]
@@ -163,12 +185,12 @@
           (go-forever
            (let [payload (<! ch-p)]
              (try
-               (let [values (map
-                             #(let [{:keys [metric path time rollup period ttl]} %]
-                                [(int ttl) [metric] (int rollup) (int period) path time])
-                             payload)]
+               (let [inserts (map
+                             #(let [{:keys [table metric path time rollup period ttl]} %]
+				  [(makeinsertstrq table) [(int ttl) [metric] (int rollup) (int period) path time]])
+                             payload) ]
                  (take!
-                  (alia/execute-chan session (batch insert! values) {:consistency :any})
+	 	  (alia/execute-chan session (makebatch session inserts) {:consistency :any})
                   (fn [rows-or-e]
                     (if (instance? Throwable rows-or-e)
                       (info rows-or-e "Cassandra error")

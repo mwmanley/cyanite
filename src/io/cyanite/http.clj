@@ -33,7 +33,7 @@
 (defn find-best-rollup
   "Find most precise storage period given the oldest point wanted"
   [from rollups]
-  (let [within (fn [{:keys [rollup period table] :as rollup-def}]
+  (let [within (fn [{:keys [rollup period] :as rollup-def}]
                  (and (>= (Long/parseLong from) (- (now) (* rollup period)))
                       rollup-def))]
     (some within (sort-by :rollup rollups))))
@@ -74,13 +74,12 @@
 (defmethod process :metrics
   [{{:keys [from to path agg]} :params :keys [index store rollups]}]
   (debug "fetching paths: " path)
-  (if-let [{:keys [rollup period table]} (find-best-rollup from rollups)]
+  (if-let [{:keys [rollup period]} (find-best-rollup from rollups)]
     (let [to    (if to (Long/parseLong to) (now))
           from  (Long/parseLong from)
           paths (mapcat (partial path/lookup index "")
                         (if (sequential? path) path [path]))]
-      (debug "table is:" table)
-      (store/fetch store (or agg "mean") table paths "" rollup period from to))
+      (store/fetch store (or agg "mean") paths "" rollup period from to))
     {:step nil :from nil :to nil :series {}}))
 
 (defmethod process :ping

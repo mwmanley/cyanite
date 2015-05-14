@@ -36,7 +36,6 @@
              :ttl    (or ttl (* rollup period))
              :time   (rollup-to timel)
              :metric metricd})))
-      (debug "table is:" :table)
       (catch Exception e
           (info "Exception for metric [" input "] : " e))))
 
