@@ -145,7 +145,6 @@
   [^PreparedStatement s values]
   (let [b (BatchStatement.)]
     (doseq [v values]
-      (debug "s: " s " and this value: " v)
       (.add b (.bind s (into-array Object v))))
     b))
 
