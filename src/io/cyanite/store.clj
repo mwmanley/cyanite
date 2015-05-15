@@ -205,7 +205,7 @@
                   	(fn [rows-or-e]
                           (if (instance? Throwable rows-or-e)
                       	     (info rows-or-e "Cassandra error")
-                      	     (info "Batch written")))))))
+                      	     ))))))
                	(catch Exception e
                  (info e "Store processing exception")))))
           ch))
