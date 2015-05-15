@@ -189,7 +189,7 @@
              (try
                (let [inserts (map
                              #(let [{:keys [table metric path time rollup period ttl]} %]
-				  [table [(int ttl) [metric] (int rollup) (int period) path time]])
+				  [table [[(int ttl) [metric] (int rollup) (int period) path time]]])
                              payload) ]
                  (take!
     		  (doseq [i inserts]
@@ -202,7 +202,7 @@
                       (info rows-or-e "Cassandra error")
                       (debug "Batch written")))))
                (catch Exception e
-                 (info e "Store processing exception"))))
+                 (info e "Store processing exception")))))
           ch))
       (insert [this ttl data tenant rollup period path time]
         (alia/execute-chan
