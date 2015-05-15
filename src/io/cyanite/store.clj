@@ -15,6 +15,10 @@
 
 (set! *warn-on-reflection* true)
 
+; Define an atom to be used for prepared statements dynamically
+; generated
+(def p (atom {}))
+
 (defprotocol Metricstore
   (insert [this ttl data tenant rollup period path time])
   (channel-for [this])
@@ -48,9 +52,7 @@
   (alia/prepare
    session
    (str
-    "UPDATE " table 
-    " USING TTL ? SET data = data + ? "
-    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))))
+      (makeinsertstrq table)))))
 
 (defn fetchq
   "Yields a cassandra prepared statement of 6 arguments:
@@ -63,7 +65,6 @@
 * `limit`: maximum number of points to return"
   [session]
   (let [table "metric"] 
-  (debug "table is" table)
   (alia/prepare
    session
    (str
@@ -144,23 +145,27 @@
   [^PreparedStatement s values]
   (let [b (BatchStatement.)]
     (doseq [v values]
+      (debug "s: " s " and this value: " v)
       (.add b (.bind s (into-array Object v))))
     b))
 
-(defn- makebatch
-  [session inserts]
-  (let [b (BatchStatement.)]
-    (doseq [i inserts]
-      (let [ [sql v] i ]
-      (let [^PreparedStatement s (alia/prepare session sql)] 
-	(debug "sql is: " sql " and v is now: " v)
-        (.add b (.bind s (into-array Object v))))))
-  b))
+; Function for creating a prepared statements object
+; since we can only prepare a SQL statement once
+(defn getprepstatements
+  [table]
+  (@p table))
+
+; Add prepared statements and index by table name
+(defn addprepstatements
+  [table session sql]
+  (if (getprepstatements table)
+  (debug "I have this table: " table " and this sql:" sql )
+  (swap! p assoc table (alia/prepare session sql))))
 
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
-  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password]
+  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password ]
     :or   {hints {:replication {:class "SimpleStrategy"
                                 :replication_factor (or repfactor 3)}}
            chan_size 10000
@@ -173,7 +178,7 @@
           (alia/cluster)
           (alia/connect keyspace))
 	  insert! (insertq session)
-	  fetch!  (fetchq session)]
+	  fetch!  (fetchq session) ]
     (reify
       Metricstore
       (channel-for [this]
@@ -184,16 +189,20 @@
              (try
                (let [inserts (map
                              #(let [{:keys [table metric path time rollup period ttl]} %]
-				  [(makeinsertstrq table) [(int ttl) [metric] (int rollup) (int period) path time]])
+				  [table [(int ttl) [metric] (int rollup) (int period) path time]])
                              payload) ]
                  (take!
-	 	  (alia/execute-chan session (makebatch session inserts) {:consistency :any})
+    		  (doseq [i inserts]
+      		    (let [ [table v] i ]
+        	     (addprepstatements table session (makeinsertstrq table))
+		     (debug "table: " table " test: " (getprepstatements table) " and this value: " v)
+	 	     (alia/execute-chan session (batch (getprepstatements table) v) {:consistency :any})))
                   (fn [rows-or-e]
                     (if (instance? Throwable rows-or-e)
                       (info rows-or-e "Cassandra error")
                       (debug "Batch written")))))
                (catch Exception e
-                 (info e "Store processing exception")))))
+                 (info e "Store processing exception"))))
           ch))
       (insert [this ttl data tenant rollup period path time]
         (alia/execute-chan
