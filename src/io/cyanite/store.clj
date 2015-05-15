@@ -191,11 +191,11 @@
                              #(let [{:keys [table metric path time rollup period ttl]} %]
 				  [table [[(int ttl) [metric] (int rollup) (int period) path time]]])
                              payload) ]
-                 (take!
     		  (doseq [i inserts]
       		    (let [ [table v] i ]
         	     (addprepstatements table session (makeinsertstrq table))
 		     (debug "table: " table " test: " (getprepstatements table) " and this value: " v)
+                  (take!
 	 	     (alia/execute-chan session (batch (getprepstatements table) v) {:consistency :any})))
                   (fn [rows-or-e]
                     (if (instance? Throwable rows-or-e)
