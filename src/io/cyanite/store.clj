@@ -195,13 +195,13 @@
       		    (let [ [table v] i ]
         	     (addprepstatements table session (makeinsertstrq table))
 		     (debug "table: " table " test: " (getprepstatements table) " and this value: " v)
-                  (take!
-	 	     (alia/execute-chan session (batch (getprepstatements table) v) {:consistency :any})))
-                  (fn [rows-or-e]
-                    (if (instance? Throwable rows-or-e)
-                      (info rows-or-e "Cassandra error")
-                      (debug "Batch written")))))
-               (catch Exception e
+                     (take!
+	 	        (alia/execute-chan session (batch (getprepstatements table) v) {:consistency :any})
+                  	(fn [rows-or-e]
+                          (if (instance? Throwable rows-or-e)
+                      	     (info rows-or-e "Cassandra error")
+                      	     (debug "Batch written")))))
+               	(catch Exception e
                  (info e "Store processing exception")))))
           ch))
       (insert [this ttl data tenant rollup period path time]
