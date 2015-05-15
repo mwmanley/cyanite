@@ -74,12 +74,12 @@
 (defmethod process :metrics
   [{{:keys [from to path agg]} :params :keys [index store rollups]}]
   (debug "fetching paths: " path)
-  (if-let [{:keys [rollup period]} (find-best-rollup from rollups)]
+  (if-let [{:keys [rollup period table]} (find-best-rollup from rollups)]
     (let [to    (if to (Long/parseLong to) (now))
           from  (Long/parseLong from)
           paths (mapcat (partial path/lookup index "")
                         (if (sequential? path) path [path]))]
-      (store/fetch store (or agg "mean") paths "" rollup period from to))
+      (store/fetch store (or agg "mean") table paths "" rollup period from to))
     {:step nil :from nil :to nil :series {}}))
 
 (defmethod process :ping

@@ -22,7 +22,7 @@
 (defprotocol Metricstore
   (insert [this ttl data tenant rollup period path time])
   (channel-for [this])
-  (fetch [this agg paths tenant rollup period from to]))
+  (fetch [this agg table paths tenant rollup period from to]))
 
 ;;
 ;; The following contains necessary cassandra queries. Since
@@ -31,7 +31,7 @@
 
 ; Take a dynamic table name for creating a prepared statement in the 
 ; later code
-(defn makeinsertstrq
+(defn makeinsertquery
   [table]
    (str
     "UPDATE " table 
@@ -52,7 +52,15 @@
   (alia/prepare
    session
    (str
-      (makeinsertstrq table)))))
+      (makeinsertquery table)))))
+
+; Dynamic fetching
+(defn makefetchquery
+  [table]
+   (str
+    "SELECT path,data,time FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
+    "AND time >= ? AND time <= ? ORDER BY time ASC;"))
+
 
 (defn fetchq
   "Yields a cassandra prepared statement of 6 arguments:
@@ -151,14 +159,14 @@
 ; Function for creating a prepared statements object
 ; since we can only prepare a SQL statement once
 (defn getprepstatements
-  [table]
-  (@p table))
+  [sql]
+  (@p sql))
 
 ; Add prepared statements and index by table name
 (defn addprepstatements
-  [table session sql]
-  (if-not (getprepstatements table)
-  (swap! p assoc table (alia/prepare session sql))))
+  [session sql]
+  (if-not (getprepstatements sql)
+  (swap! p assoc sql (alia/prepare session sql))))
 
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
@@ -191,9 +199,9 @@
                              payload) ]
     		  (doseq [i inserts]
       		    (let [ [table v] i ]
-        	     (addprepstatements table session (makeinsertstrq table))
+        	     (addprepstatements session (makeinsertquery table))
                      (take!
-	 	        (alia/execute-chan session (batch (getprepstatements table) v) {:consistency :any})
+	 	        (alia/execute-chan session (batch (getprepstatements (makeinsertquery table)) v) {:consistency :any})
                   	(fn [rows-or-e]
                           (if (instance? Throwable rows-or-e)
                       	     (info rows-or-e "Cassandra error")
@@ -206,11 +214,12 @@
          session 
          insert!
          {:values [ttl data tenant rollup period path time]}))
-      (fetch [this agg paths tenant rollup period from to]
-        (debug "fetching paths from store: " paths rollup period from to)
+      (fetch [this agg table paths tenant rollup period from to]
+	(addprepstatements session (makefetchquery table))
+        (debug "fetching paths from store: " table paths rollup period from to)
         (if-let [data (and (seq paths)
                            (->> (alia/execute
-                                 session fetch!
+                                 session (getprepstatements (makefetchquery table))
                                  {:values [paths (int rollup) (int period)
                                            from to]
                                   :fetch-size Integer/MAX_VALUE})
