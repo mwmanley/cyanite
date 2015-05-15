@@ -157,8 +157,7 @@
 ; Add prepared statements and index by table name
 (defn addprepstatements
   [table session sql]
-  (if (getprepstatements table)
-  (debug "I have this table: " table " and this sql:" sql )
+  (if-not (getprepstatements table)
   (swap! p assoc table (alia/prepare session sql))))
 
 (defn cassandra-metric-store
@@ -193,7 +192,6 @@
     		  (doseq [i inserts]
       		    (let [ [table v] i ]
         	     (addprepstatements table session (makeinsertstrq table))
-		     (debug "table: " table " test: " (getprepstatements table) " and this value: " v)
                      (take!
 	 	        (alia/execute-chan session (batch (getprepstatements table) v) {:consistency :any})
                   	(fn [rows-or-e]
