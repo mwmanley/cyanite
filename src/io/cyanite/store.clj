@@ -32,13 +32,6 @@
 ; Take a dynamic table name for creating a prepared statement in the 
 ; later code
 (defn makeinsertquery
-  [table]
-   (str
-    "UPDATE " table 
-    " USING TTL ? SET data = data + ? "
-    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
-
-(defn insertq 
   "Yields a cassandra prepared statement of 6 arguments:
 
 * `ttl`: how long to keep the point around
@@ -47,22 +40,14 @@
 * `period`: rollup multiplier which determines the time to keep points for
 * `path`: name of the metric
 * `time`: timestamp of the metric, should be divisible by rollup"
-  [session]
-  (let [table "metric"] 
-  (alia/prepare
-   session
+  [table]
    (str
-      (makeinsertquery table)))))
+    "UPDATE " table 
+    " USING TTL ? SET data = data + ? "
+    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
 
 ; Dynamic fetching
 (defn makefetchquery
-  [table]
-   (str
-    "SELECT path,data,time FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
-    "AND time >= ? AND time <= ? ORDER BY time ASC;"))
-
-
-(defn fetchq
   "Yields a cassandra prepared statement of 6 arguments:
 
 * `paths`: list of paths
@@ -71,13 +56,10 @@
 * `min`: return points starting from this timestamp
 * `max`: return points up to this timestamp
 * `limit`: maximum number of points to return"
-  [session]
-  (let [table "metric"] 
-  (alia/prepare
-   session
+  [table]
    (str
     "SELECT path,data,time FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
-    "AND time >= ? AND time <= ? ORDER BY time ASC;"))))
+    "AND time >= ? AND time <= ? ORDER BY time ASC;"))
 
 (defn useq
   "Yields a cassandra use statement for a keyspace"
@@ -182,9 +164,7 @@
           (cond-> (and username password)
                    (assoc :credentials {:user username :password password}))
           (alia/cluster)
-          (alia/connect keyspace))
-	  insert! (insertq session)
-	  fetch!  (fetchq session) ]
+          (alia/connect keyspace)) ]
     (reify
       Metricstore
       (channel-for [this]
@@ -197,7 +177,7 @@
                              #(let [{:keys [table metric path time rollup period ttl]} %]
 				  [table [[(int ttl) [metric] (int rollup) (int period) path time]]])
                              payload) ]
-    		  (doseq [i inserts]
+		  (doseq [i inserts]
       		    (let [ [table v] i ]
         	     (addprepstatements session (makeinsertquery table))
                      (take!
@@ -209,11 +189,6 @@
                	(catch Exception e
                  (info e "Store processing exception")))))
           ch))
-      (insert [this ttl data tenant rollup period path time]
-        (alia/execute-chan
-         session 
-         insert!
-         {:values [ttl data tenant rollup period path time]}))
       (fetch [this agg table paths tenant rollup period from to]
 	(addprepstatements session (makefetchquery table))
         (debug "fetching paths from store: " table paths rollup period from to)
