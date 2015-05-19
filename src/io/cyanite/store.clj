@@ -150,6 +150,13 @@
   (if-not (getprepstatements sql)
   (swap! p assoc sql (alia/prepare session sql))))
 
+(defn groupvalues 
+  [data]
+  (->> (group-by :table data)
+       (map (fn [[k v]]
+              [k (mapv second (mapv second v))]))
+       (into [])))
+
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
@@ -175,10 +182,10 @@
              (try
                (let [inserts (map
                              #(let [{:keys [table metric path time rollup period ttl]} %]
-				  [table [[(int ttl) [metric] (int rollup) (int period) path time]]])
+				  { :table table :v [(int ttl) [metric] (int rollup) (int period) path time]})
                              payload) ]
-		  (doseq [i inserts]
-      		    (let [ [table v] i ]
+		 (doseq [ i (groupvalues inserts) ]
+		  (let [ [ table v ] i ]
         	     (addprepstatements session (makeinsertquery table))
                      (take!
 	 	        (alia/execute-chan session (batch (getprepstatements (makeinsertquery table)) v) {:consistency :any})
