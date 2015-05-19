@@ -187,7 +187,7 @@
 				  { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
                              payload) ]
 		(let [ i (apply min-key :rollup(groupvalues inserts)) ]
-		  	(let [ [ table v rollup ] i 
+		  	(let [ [ :table table :v v :rollup rollup ] i 
 			 sql (makeinsertquery table)]
 		     		(println "have table: " table " and v " v )
         	     		(addprepstatements session sql)
