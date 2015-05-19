@@ -150,11 +150,13 @@
   (if-not (getprepstatements sql)
   (swap! p assoc sql (alia/prepare session sql))))
 
+; Group these data by table name and consolidate the values.  We will
+; ignore other components of these data being passed in.
 (defn groupvalues 
   [data]
-  (->> (group-by :table data)
-       (map (fn [[k v]]
-              [k (mapv second (mapv second v))]))
+  (->> (group-by :rollup data)
+       (map (fn [[k v ]]
+              {:table (get (mapv second (mapv first v)) 0) :v (mapv second (mapv second v)) :rollup k}))
        (into [])))
 
 (defn cassandra-metric-store
@@ -182,20 +184,22 @@
              (try
                (let [inserts (map
                              #(let [{:keys [table metric path time rollup period ttl]} %]
-				  { :table table :v [(int ttl) [metric] (int rollup) (int period) path time]})
+				  { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
                              payload) ]
-		 (doseq [ i (groupvalues inserts) ]
-		  (let [ [ table v ] i ]
-        	     (addprepstatements session (makeinsertquery table))
-                     (take!
-	 	        (alia/execute-chan session (batch (getprepstatements (makeinsertquery table)) v) {:consistency :any})
-                  	(fn [rows-or-e]
-                          (if (instance? Throwable rows-or-e)
-                      	     (info rows-or-e "Cassandra error")
-                      	     ))))))
+		(let [ i (apply min-key :rollup(groupvalues inserts)) ]
+		  	(let [ [ table v rollup ] i 
+			 sql (makeinsertquery table)]
+		     		(println "have table: " table " and v " v )
+        	     		(addprepstatements session sql)
+                     		(take!
+	 	        		(alia/execute-chan session (batch (getprepstatements sql) v) {:consistency :any})
+                  			(fn [rows-or-e]
+                          			(if (instance? Throwable rows-or-e)
+                      	     				(info rows-or-e "Cassandra error")
+						))))))
                	(catch Exception e
-                 (info e "Store processing exception")))))
-          ch))
+                    (info e "Store processing exception"))))) 
+       ch))
       (fetch [this agg table paths tenant rollup period from to]
 	(addprepstatements session (makefetchquery table))
         (debug "fetching paths from store: " table paths rollup period from to)
