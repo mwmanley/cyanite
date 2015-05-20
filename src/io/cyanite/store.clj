@@ -211,7 +211,14 @@
                                         )
 				)
 				(if ( > idx 0)
-					(println "idx is just: " idx)
+                                        (let [ highesttime (apply max(map :time rolls)) ]
+						(println "idx is just: " idx " and high is" highestime)
+                                                (doseq [r] (sort-by :time (rolls))
+                                                        (let [ [ rtime rboundary ] r ]
+                                                                (println ("rtime is: " rtime " and rboundary is" rboundary))
+                                                        )
+                                                )
+                                        )
 				)
                         )
 		)
