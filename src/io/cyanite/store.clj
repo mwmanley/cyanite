@@ -159,6 +159,10 @@
               {:table (get (mapv second (mapv first v)) 0) :v (mapv second (mapv second v)) :rollup k}))
        (into [])))
 
+; Clojure doesn't have a for loop like C, so we have to make it do that
+(defn enum [s]
+   (map vector (range) s))
+
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
@@ -184,25 +188,40 @@
              (try
                (let [inserts (map
                              #(let [{:keys [table metric path time rollup period ttl]} %]
-				  { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
-                             payload) ]
-		(let [ i (apply min-key :rollup(groupvalues inserts)) ]
-		   (let [ [table v rollup] (vals i) 
-			 sql (makeinsertquery table)]
-        	     		(addprepstatements session sql)
-                     		(take!
-	 	        		(alia/execute-chan session (batch (getprepstatements sql) v) {:consistency :any})
-                  			(fn [rows-or-e]
-                          			(if (instance? Throwable rows-or-e)
-                      	     				(info rows-or-e "Cassandra error")
-						))))))
-               	(catch Exception e
-                    (info e "Store processing exception"))))) 
-       ch))
-      (fetch [this agg table paths tenant rollup period from to]
-	(addprepstatements session (makefetchquery table))
-        (debug "fetching paths from store: " table paths rollup period from to)
-        (if-let [data (and (seq paths)
+				    { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
+                             payload)
+		     rolls (map 
+                             #(let [{:keys [time rollup]} %]
+                                  { :time time :rollup rollup })
+                            payload) ]
+                        (doseq [[idx i] (enum (sort-by :rollup (groupvalues inserts)))]
+				(if (= idx 0)
+                                	(println "idx is " idx " and i is: " i)
+                                        (let [ [table v rollup] (vals i)
+                                                sql (makeinsertquery table)]
+                                                (addprepstatements session sql)
+                                                (take!
+                                                        (alia/execute-chan session (batch (getprepstatements sql) v) {:consistency :any})
+                                                        (fn [rows-or-e]
+                                                                (if (instance? Throwable rows-or-e)
+                                                                        (info rows-or-e "Cassandra error")
+                                                                )
+                                                        )
+                                                )
+                                        )
+				)
+				(if ( > idx 0)
+					(println "idx is just: " idx)
+				)
+                        )
+		)
+               (catch Exception e
+                    (info e "Store processing exception")))))
+	ch))
+	(fetch [this agg table paths tenant rollup period from to]
+		(addprepstatements session (makefetchquery table))
+		(debug "fetching paths from store: " table paths rollup period from to)
+		(if-let [data (and (seq paths)
                            (->> (alia/execute
                                  session (getprepstatements (makefetchquery table))
                                  {:values [paths (int rollup) (int period)
