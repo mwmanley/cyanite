@@ -19,6 +19,9 @@
 ; generated
 (def p (atom {}))
 
+; Define an atom to be used for rollup state
+(def rollupsprocessed (atom {}))
+
 (defprotocol Metricstore
   (insert [this ttl data tenant rollup period path time])
   (channel-for [this])
@@ -138,6 +141,21 @@
       (.add b (.bind s (into-array Object v))))
     b))
 
+; Function for keeping track of what rollups have
+; been processed
+(defn getprocessedrollups
+  [rollup]
+  (cond (nil? (@rollupsprocessed rollup)) 0
+        :else (@rollupsprocessed rollup) ))
+
+; Add prepared statements and index by table name
+(defn addproccessedrollups
+  [rollup lasttime]
+  (let [ lastroll (getprocessedrollups rollup)  ]
+  (println "rollup: " rollup " lasttime: " lasttime " lastroll: " lastroll)
+  (if (> lasttime lastroll)
+  (swap! rollupsprocessed assoc rollup lasttime))))
+
 ; Function for creating a prepared statements object
 ; since we can only prepare a SQL statement once
 (defn getprepstatements
@@ -160,9 +178,14 @@
        (into [])))
 
 ; Clojure doesn't have a for loop like C, so we have to make it do that
-(defn enum [s]
+(defn enum 
+  [s]
    (map vector (range) s))
 
+; Do a rollup with Cassandra queries
+(defn dorollup 
+  [r] )
+   
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
@@ -187,41 +210,46 @@
            (let [payload (<! ch-p)]
              (try
                (let [inserts (map
-                             #(let [{:keys [table metric path time rollup period ttl]} %]
-				    { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
-                             payload)
-		     rolls (map 
-                             #(let [{:keys [time rollup]} %]
-                                  { :time time :rollup rollup })
-                            payload) ]
-                        (doseq [[idx i] (enum (sort-by :rollup (groupvalues inserts)))]
-				(if (= idx 0)
-                                	(println "idx is " idx " and i is: " i)
-                                        (let [ [table v rollup] (vals i)
-                                                sql (makeinsertquery table)]
-                                                (addprepstatements session sql)
-                                                (take!
-                                                        (alia/execute-chan session (batch (getprepstatements sql) v) {:consistency :any})
-                                                        (fn [rows-or-e]
-                                                                (if (instance? Throwable rows-or-e)
-                                                                        (info rows-or-e "Cassandra error")
-                                                                )
-                                                        )
-                                                )
+                            #(let [{:keys [table metric path time rollup period ttl]} %]
+                            { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
+                            payload) 
+                    ]
+                    (doseq [[idx i] (enum (sort-by :rollup (groupvalues inserts)))]
+                        (let [ [lowtable lowv lowrollup] (vals (apply min-key :rollup inserts)) ]
+                            (if (= idx 0)
+                                (let [ [table v rollup] (vals i)
+                                    sql (makeinsertquery table)]
+                                    (addprepstatements session sql)
+                                    (take!
+                                        (alia/execute-chan session (batch (getprepstatements sql) v) {:consistency :any})
+                                        (fn [rows-or-e]
+                                            (if (instance? Throwable rows-or-e)
+                                                (info rows-or-e "Cassandra error")
+                                            )
                                         )
-				)
-				(if ( > idx 0)
-                                        (let [ highesttime (apply max(map :time rolls)) ]
-						(println "idx is just: " idx " and high is" highestime)
-                                                (doseq [r] (sort-by :time (rolls))
-                                                        (let [ [ rtime rboundary ] r ]
-                                                                (println ("rtime is: " rtime " and rboundary is" rboundary))
-                                                        )
-                                                )
-                                        )
-				)
-                        )
-		)
+                                    )
+                                )
+				            )
+				            (if ( > idx 0)
+                                (let [ [table v rollup] (vals i)
+                                        fetchsql (makefetchquery lowtable)
+                                        insertsql (makeinsertquery table)
+                                        vs (distinct v)
+                                   ]
+                                   (doseq [ [ttl metric rollup period path time] vs]
+                                        (let [ lasttime (- time rollup) 
+                                               lastroll (getprocessedrollups rollup) ]
+                                            (println "path is: " path " rollup is " rollup " lastroll is " lastroll " and lasttime " lasttime)
+                                            (if (< lastroll lasttime)
+                                                (addproccessedrollups rollup lasttime)
+                                            )
+                                        ) 
+                                   )
+                                )
+                            )
+				        )
+                    )
+		        )
                (catch Exception e
                     (info e "Store processing exception")))))
 	ch))

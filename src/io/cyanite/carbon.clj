@@ -30,7 +30,7 @@
       (when (and (not= "nan" metricd) (not= "nan" timel))
           (for [{:keys [rollup period ttl table rollup-to]} rollups]
             {:path   path
-	     :table  table
+	         :table  table
              :rollup rollup
              :period period
              :ttl    (or ttl (* rollup period))
