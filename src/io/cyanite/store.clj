@@ -19,6 +19,9 @@
 ; generated
 (def p (atom {}))
 
+; Define an atom to prevent rollups from looping during a period
+(def procrollups (atom {}))
+
 (defprotocol Metricstore
   (insert [this ttl data tenant rollup period path time])
   (channel-for [this])
@@ -180,6 +183,15 @@
   (if-not (getprepstatements sql)
   (swap! p assoc sql (alia/prepare session sql))))
 
+(defn getprocrollups
+  [rollstr]
+  (@procrollups rollstr))
+
+; Add prepared statements and index by table name
+(defn addprocrollups
+  [rollstr time]
+  (swap! procrollups assoc rollstr time))
+
 ; Group these data by table name and consolidate the values.  We will
 ; ignore other components of these data being passed in.
 (defn groupvalues 
@@ -248,20 +260,19 @@
                                   ]
                                   (addprepstatements session fetchsql)
                                   (addprepstatements session insertsql)
-                                  (println "vs: " vs)
                                   (doseq [v vs]
-                                    (println "v: " v)
-                                    (let [ [ttl metric vrollup period path time] v ]
-                                        (println "lowtime is: " lowtime " vrollup is: " vrollup " rem is: " (rem lowtime vrollup))
+                                    (let [ [ttl metric vrollup period path time] v
+                                            rollstr (str path vrollup)
+                                            rollvar (getprocrollups rollstr) ]
                                         ; Do rollups along boundaries only
-                                        (if (= 0 (rem lowtime vrollup)) 
+                                        (if (and (= 0 (rem lowtime vrollup))(not= rollvar time))
                                             (let [ fstmt (getprepstatements fetchsql)
                                                    istmt (getprepstatements insertsql)]
                                                 (let [rollval (alia/execute session fstmt
                                                             {:values [path lowrollup lowperiod lowtime (+ lowtime rollup)]})]
-                                                    (println "path is: " path " and rollup is: " rollup " and data are: " (averagerollup rollval))
                                                     (alia/execute session istmt
                                                             {:values [(int ttl) [(averagerollup rollval)] (int rollup) (int period) path (+ lowtime rollup)]}))
+                                                    (addprocrollups rollstr time)
                                                 )))))))))
                (catch Exception e
                     (info e "Store processing exception")))))
