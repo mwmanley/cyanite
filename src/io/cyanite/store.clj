@@ -76,6 +76,21 @@
     "SELECT data FROM " table " WHERE path = ? AND tenant = '' AND rollup = ? AND period = ? "
     "AND time >= ? AND time < ? ORDER BY time ASC;"))
 
+(defn makerollupinsertquery
+  "Yields a cassandra prepared statement of 6 arguments:
+
+* `ttl`: how long to keep the point around
+* `metric`: the data point
+* `rollup`: interval between points at this resolution
+* `period`: rollup multiplier which determines the time to keep points for
+* `path`: name of the metric
+* `time`: timestamp of the metric, should be divisible by rollup"
+  [table]
+   (str
+    "UPDATE " table
+    " USING TTL ? SET data = ? "
+    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
+
 (defn useq
   "Yields a cassandra use statement for a keyspace"
   [keyspace]
@@ -224,35 +239,30 @@
                                         (fn [rows-or-e]
                                             (if (instance? Throwable rows-or-e)
                                                 (info rows-or-e "Cassandra error")
-                                            )
-                                        )
-                                    )
-                                )
-				            )
+                                            )))))
 				            (if ( > idx 0)
-                                (let [ [table v rollup] (distinct (vals i))
+                                (let [ [table vr rollup] (vals i)
                                         fetchsql (makerollupfetchquery lowtable)
                                         insertsql (makeinsertquery table)
-                                   ]
-                                   (addprepstatements session fetchsql)
-                                   (let [ [ttl metric vrollup period path time] (first v) ]
-                                        (println "v is: " (first v))
+                                        vs (set vr)
+                                  ]
+                                  (addprepstatements session fetchsql)
+                                  (addprepstatements session insertsql)
+                                  (println "vs: " vs)
+                                  (doseq [v vs]
+                                    (println "v: " v)
+                                    (let [ [ttl metric vrollup period path time] v ]
                                         (println "lowtime is: " lowtime " vrollup is: " vrollup " rem is: " (rem lowtime vrollup))
                                         ; Do rollups along boundaries only
-                                        (if (= 0 (rem lowtime vrollup)) (
-                                                (let [ stmt (getprepstatements fetchsql)]
-                                                    (let [rollval (conj (alia/execute session stmt 
-                                                        {:values [path lowrollup lowperiod lowtime (+ lowtime vrollup)]}))]
-                                                        (println "path is: " path " and rollup is: " rollup " and data are: " (averagerollup rollval))
-                                                    )
-                                                )
-                                        ))
-                                   )
-                                )
-                            )
-				        )
-                    )
-		        )
+                                        (if (= 0 (rem lowtime vrollup)) 
+                                            (let [ fstmt (getprepstatements fetchsql)
+                                                   istmt (getprepstatements insertsql)]
+                                                (let [rollval (alia/execute session fstmt
+                                                            {:values [path lowrollup lowperiod lowtime (+ lowtime rollup)]})]
+                                                    (println "path is: " path " and rollup is: " rollup " and data are: " (averagerollup rollval))
+                                                    (alia/execute session istmt
+                                                            {:values [(int ttl) [(averagerollup rollval)] (int rollup) (int period) path (+ lowtime rollup)]}))
+                                                )))))))))
                (catch Exception e
                     (info e "Store processing exception")))))
 	ch))
