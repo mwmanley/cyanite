@@ -19,9 +19,6 @@
 ; generated
 (def p (atom {}))
 
-; Define an atom to be used for rollup state
-(def rollupsprocessed (atom {}))
-
 (defprotocol Metricstore
   (insert [this ttl data tenant rollup period path time])
   (channel-for [this])
@@ -63,6 +60,21 @@
    (str
     "SELECT path,data,time FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
     "AND time >= ? AND time <= ? ORDER BY time ASC;"))
+
+; Dynamic fetching
+(defn makerollupfetchquery
+  "Yields a cassandra prepared statement of 6 arguments:
+
+* `paths`: list of paths
+* `rollup`: interval between points at this resolution
+* `period`: rollup multiplier which determines the time to keep points for
+* `min`: return points starting from this timestamp
+* `max`: return points up to this timestamp
+* `limit`: maximum number of points to return"
+  [table]
+   (str
+    "SELECT data FROM " table " WHERE path = ? AND tenant = '' AND rollup = ? AND period = ? "
+    "AND time >= ? AND time < ? ORDER BY time ASC;"))
 
 (defn useq
   "Yields a cassandra use statement for a keyspace"
@@ -141,21 +153,6 @@
       (.add b (.bind s (into-array Object v))))
     b))
 
-; Function for keeping track of what rollups have
-; been processed
-(defn getprocessedrollups
-  [rollup]
-  (cond (nil? (@rollupsprocessed rollup)) 0
-        :else (@rollupsprocessed rollup) ))
-
-; Add prepared statements and index by table name
-(defn addproccessedrollups
-  [rollup lasttime]
-  (let [ lastroll (getprocessedrollups rollup)  ]
-  (println "rollup: " rollup " lasttime: " lasttime " lastroll: " lastroll)
-  (if (> lasttime lastroll)
-  (swap! rollupsprocessed assoc rollup lasttime))))
-
 ; Function for creating a prepared statements object
 ; since we can only prepare a SQL statement once
 (defn getprepstatements
@@ -182,9 +179,11 @@
   [s]
    (map vector (range) s))
 
-; Do a rollup with Cassandra queries
-(defn dorollup 
-  [r] )
+; Cassandra returns lists of maps for values, which we needo
+; turn into an average
+(defn averagerollup
+  [data]
+  (/ (reduce + (reduce + (vals (apply conj data)))) (count (reduce + (vals (apply conj data))))))
    
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
@@ -214,8 +213,8 @@
                             { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
                             payload) 
                     ]
-                    (doseq [[idx i] (enum (sort-by :rollup (groupvalues inserts)))]
-                        (let [ [lowtable lowv lowrollup] (vals (apply min-key :rollup inserts)) ]
+                    (let [ [lowtable [lowttl lowmetric lowroll lowperiod lowpath lowtime] lowrollup] (vals (apply min-key :rollup inserts)) ]
+                        (doseq [[idx i] (enum (sort-by :rollup (groupvalues inserts)))]
                             (if (= idx 0)
                                 (let [ [table v rollup] (vals i)
                                     sql (makeinsertquery table)]
@@ -231,19 +230,23 @@
                                 )
 				            )
 				            (if ( > idx 0)
-                                (let [ [table v rollup] (vals i)
-                                        fetchsql (makefetchquery lowtable)
+                                (let [ [table v rollup] (distinct (vals i))
+                                        fetchsql (makerollupfetchquery lowtable)
                                         insertsql (makeinsertquery table)
-                                        vs (distinct v)
                                    ]
-                                   (doseq [ [ttl metric rollup period path time] vs]
-                                        (let [ lasttime (- time rollup) 
-                                               lastroll (getprocessedrollups rollup) ]
-                                            (println "path is: " path " rollup is " rollup " lastroll is " lastroll " and lasttime " lasttime)
-                                            (if (< lastroll lasttime)
-                                                (addproccessedrollups rollup lasttime)
-                                            )
-                                        ) 
+                                   (addprepstatements session fetchsql)
+                                   (let [ [ttl metric vrollup period path time] (first v) ]
+                                        (println "v is: " (first v))
+                                        (println "lowtime is: " lowtime " vrollup is: " vrollup " rem is: " (rem lowtime vrollup))
+                                        ; Do rollups along boundaries only
+                                        (if (= 0 (rem lowtime vrollup)) (
+                                                (let [ stmt (getprepstatements fetchsql)]
+                                                    (let [rollval (conj (alia/execute session stmt 
+                                                        {:values [path lowrollup lowperiod lowtime (+ lowtime vrollup)]}))]
+                                                        (println "path is: " path " and rollup is: " rollup " and data are: " (averagerollup rollval))
+                                                    )
+                                                )
+                                        ))
                                    )
                                 )
                             )
