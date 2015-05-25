@@ -210,7 +210,7 @@
 ; turn into an average
 (defn averagerollup
   [data]
-  (/ (apply + data) (count data)))
+  (if (not= 0 (count data))(/ (apply + data) (count data)) nil))
    
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
@@ -272,8 +272,8 @@
                                                             {:values [path lowrollup lowperiod (- time rollup) time]})
                                                       data (first (vals (apply merge-with concat rollval)))
                                                       avg (averagerollup data) ]
-                                                    (alia/execute session istmt
-                                                            {:values [(int ttl) [avg] (int rollup) (int period) path time]}))
+                                                    (if avg (alia/execute session istmt
+                                                            {:values [(int ttl) [avg] (int rollup) (int period) path time]})))
                                                     (addprocrollups rollstr time)
                                                 )))))))))
                (catch Exception e
