@@ -210,8 +210,7 @@
 ; turn into an average
 (defn averagerollup
   [data]
-  (println "reduced to: " (apply + data) " and count is: " (count data))
-  (/ (reduce + data) (count data)))
+  (/ (apply + data) (count data)))
    
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
