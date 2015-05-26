@@ -289,11 +289,11 @@
                                                       avg (averagerollup data) ]
                                                     (if avg (take! 
                                                             (alia/execute-chan session istmt
-                                                            {:values [(int ttl) [avg] (int rollup) (int period) path time]}))
+                                                            {:values [(int ttl) [avg] (int rollup) (int period) path time]})
                                                             (fn [rows-or-e]
                                                                 (if (instance? Throwable rows-or-e)
-                                                                (info rows-or-e "Cassandra error")
-                                                            ))))
+                                                                    (info rows-or-e "Cassandra error")
+                                                                )))))
                                                     (addprocrollups rollstr time)
                                                 )))))))))
                (catch Exception e
