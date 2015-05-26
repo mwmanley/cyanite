@@ -278,9 +278,10 @@
                                   (doseq [v vs]
                                     (let [ [ttl metric vrollup period path time] v
                                             rollstr (str path vrollup)
-                                            rollvar (getprocrollups rollstr) ]
-                                        ; Do rollups along boundaries only
-                                        (if (and (= 0 (rem lowtime vrollup))(not= rollvar time))
+                                            rollvar (or (getprocrollups rollstr) 0) ]
+                                        ; Do rollups along boundaries only and try to prevent re-rolls
+                                        (if (and (== 0 (rem lowtime vrollup))(< rollvar time)) (
+                                            (addprocrollups rollstr (inc time))
                                             (let [ fstmt (getprepstatements fetchsql)
                                                    istmt (getprepstatements insertsql)]
                                                 (let [rollval (alia/execute session fstmt
@@ -289,13 +290,12 @@
                                                       avg (averagerollup data) ]
                                                     (if avg (take! 
                                                             (alia/execute-chan session istmt
-                                                            {:values [(int ttl) [avg] (int rollup) (int period) path time]})
+                                                                {:values [(int ttl) [avg] (int rollup) (int period) path time]})
                                                             (fn [rows-or-e]
                                                                 (if (instance? Throwable rows-or-e)
                                                                     (info rows-or-e "Cassandra error")
                                                                 )))))
-                                                    (addprocrollups rollstr time)
-                                                )))))))))
+                                                ))))))))))
                (catch Exception e
                     (info e "Store processing exception")))))
 	ch))
