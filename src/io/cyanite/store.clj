@@ -49,6 +49,21 @@
     " USING TTL ? SET data = data + ? "
     "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
 
+(defn makerollupinsertquery
+  "Yields a cassandra prepared statement of 6 arguments:
+
+* `ttl`: how long to keep the point around
+* `metric`: the data point
+* `rollup`: interval between points at this resolution
+* `period`: rollup multiplier which determines the time to keep points for
+* `path`: name of the metric
+* `time`: timestamp of the metric, should be divisible by rollup"
+  [table]
+   (str
+    "UPDATE " table 
+    " USING TTL ? SET data = ? "
+    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
+
 ; Dynamic fetching
 (defn makefetchquery
   "Yields a cassandra prepared statement of 6 arguments:
@@ -255,7 +270,7 @@
 				            (if ( > idx 0)
                                 (let [ [table vr rollup] (vals i)
                                         fetchsql (makerollupfetchquery lowtable)
-                                        insertsql (makeinsertquery table)
+                                        insertsql (makerollupinsertquery table)
                                         vs (set vr)
                                   ]
                                   (addprepstatements session fetchsql)
@@ -272,8 +287,13 @@
                                                             {:values [path lowrollup lowperiod (- time rollup) time]})
                                                       data (first (vals (apply merge-with concat rollval)))
                                                       avg (averagerollup data) ]
-                                                    (if avg (alia/execute session istmt
-                                                            {:values [(int ttl) [avg] (int rollup) (int period) path time]})))
+                                                    (if avg (take! 
+                                                            (alia/execute-chan session istmt
+                                                            {:values [(int ttl) [avg] (int rollup) (int period) path time]}))
+                                                            (fn [rows-or-e]
+                                                                (if (instance? Throwable rows-or-e)
+                                                                (info rows-or-e "Cassandra error")
+                                                            ))))
                                                     (addprocrollups rollstr time)
                                                 )))))))))
                (catch Exception e
