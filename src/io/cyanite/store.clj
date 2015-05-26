@@ -252,8 +252,10 @@
              (try
                (let [inserts (map
                             #(let [{:keys [table metric path time rollup period ttl]} %]
-                            { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
+                                { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
                             payload) 
+                     paths (map
+                            #(let [{:keys [path]} %] { :path path }) payload) 
                     ]
                     (let [ [lowtable [lowttl lowmetric lowroll lowperiod lowpath lowtime] lowrollup] (vals (apply min-key :rollup inserts)) ]
                         (doseq [[idx i] (enum (sort-by :rollup (groupvalues inserts)))]
@@ -268,34 +270,32 @@
                                                 (info rows-or-e "Cassandra error")
                                             )))))
 				            (if ( > idx 0)
-                                (let [ [table vr rollup] (vals i)
+                                (let [ [table vs rollup] (vals i)
                                         fetchsql (makerollupfetchquery lowtable)
                                         insertsql (makerollupinsertquery table)
-                                        vs (set vr)
                                   ]
                                   (addprepstatements session fetchsql)
                                   (addprepstatements session insertsql)
-                                  (doseq [v vs]
-                                    (let [ [ttl metric vrollup period path time] v
-                                            rollstr (str path vrollup)
-                                            rollvar (or (getprocrollups rollstr) 0) ]
+                                  (let [ [ttl metric vrollup period junk time] (first vs)
+                                            fstmt (getprepstatements fetchsql)
+                                            istmt (getprepstatements insertsql)
+                                            rollpaths (into [] (keys (group-by :path (sort-by :path paths))))
+                                            rollstr (str rollpaths vrollup) 
+                                            rollvar (or (getprocrollups rollstr) 0)]
                                         ; Do rollups along boundaries only and try to prevent re-rolls
                                         (if (and (== 0 (rem lowtime vrollup))(< rollvar time)) (
+                                            (doseq [ rollpath rollpaths ]
                                             (addprocrollups rollstr (inc time))
-                                            (let [ fstmt (getprepstatements fetchsql)
-                                                   istmt (getprepstatements insertsql)]
-                                                (let [rollval (alia/execute session fstmt
-                                                            {:values [path lowrollup lowperiod (- time rollup) time]})
-                                                      data (first (vals (apply merge-with concat rollval)))
+                                            (let [ rollval (alia/execute session fstmt {:values [rollpath lowrollup lowperiod (- time rollup) time]}) ]
+                                                (let [ data (first (vals (apply merge-with concat rollval)))
                                                       avg (averagerollup data) ]
                                                     (if avg (take! 
                                                             (alia/execute-chan session istmt
-                                                                {:values [(int ttl) [avg] (int rollup) (int period) path time]})
+                                                                {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]})
                                                             (fn [rows-or-e]
                                                                 (if (instance? Throwable rows-or-e)
                                                                     (info rows-or-e "Cassandra error")
-                                                                )))))
-                                                ))))))))))
+                                                                )))))))))))))))
                (catch Exception e
                     (info e "Store processing exception")))))
 	ch))
