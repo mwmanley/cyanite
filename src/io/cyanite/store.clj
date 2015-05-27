@@ -269,7 +269,7 @@
                                             (if (instance? Throwable rows-or-e)
                                                 (info rows-or-e "Cassandra error")
                                             )))))
-				            (if ( > idx 0) 
+				            (if (and ( > idx 0) (seq paths))
                                 (let [ [table vs rollup] (vals i)
                                         fetchsql (makerollupfetchquery lowtable)
                                         insertsql (makerollupinsertquery table)
