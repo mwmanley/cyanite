@@ -283,22 +283,23 @@
                                     (addprepstatements session insertsql)
                                     ; Do rollups along boundaries only and try to prevent re-rolls
                                     (if (and (== 0 (rem lowtime vrollup))(< rollvar time)) ( 
-                                        (take! 
-                                            (doseq [ rollpath rollpaths ] 
-                                                (addprocrollups rollstr (inc time))
-                                                ; process all the rollups
-                                                (let [ rollval (alia/execute session fstmt {:values [rollpath lowrollup lowperiod (- time rollup) time] }) ]
-                                                (if rollval 
-                                                    (let [ data (first (vals (apply merge-with concat rollval)))
+                                        (try
+                                            (take! 
+                                                (doseq [ rollpath rollpaths ] 
+                                                    (addprocrollups rollstr (inc time))
+                                                    ; process all the rollups
+                                                    (let [ rollval (alia/execute session fstmt {:values [rollpath lowrollup lowperiod (- time rollup) time] }) ]
+                                                    (if rollval 
+                                                        (let [ data (first (vals (apply merge-with concat rollval)))
                                                          avg (averagerollup data) ]
-                                                        (alia/execute session istmt 
-                                                          {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
-                                                           :consistency :any})))))
-                                            (fn [rows-or-e]
-                                                (if (instance? Throwable rows-or-e)
-                                                    (info rows-or-e "Cassandra error")))
-                                            (not nil?))))))
-             )))
+                                                            (alia/execute session istmt 
+                                                              {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
+                                                               :consistency :any})))))
+                                                (fn [rows-or-e]
+                                                    (if (instance? Throwable rows-or-e)
+                                                        (info rows-or-e "Cassandra error")))
+                                                )
+                                        (catch Exception e (debug e "Cannot write rollup " (.getMessage e)))))))))))
              (catch Exception e
                     (info e (str "Store processing exception: " (.getMessage e)))))))
 	ch))
