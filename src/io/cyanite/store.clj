@@ -286,7 +286,8 @@
                                         (doseq [ rollpath rollpaths ] 
                                             (addprocrollups rollstr (inc time))
                                             ; process all the rollups
-                                            (take! 
+                                            (try
+                                              (take! 
                                                 (alia/execute-chan session fstmt 
                                                   {:values [rollpath lowrollup lowperiod (- time rollup) time] })
                                                     (fn [rows-or-e]
@@ -297,7 +298,9 @@
                                                                       avg (averagerollup data) ]
                                                                     (alia/execute-chan session istmt 
                                                                         {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
-                                                                        :consistency :any}))))))))))))))
+                                                                        :consistency :any}))))))
+                                            (catch Exception e
+                                                (info e (str "Rollup processing exception on path: " rollpath (.getMessage e)))))))))))))
              (catch Exception e
                     (info e (str "Store processing exception: " (.getMessage e)))))))
 	ch))
