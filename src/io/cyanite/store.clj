@@ -292,11 +292,12 @@
                                                     (fn [rows-or-e]
                                                         (if (instance? Throwable rows-or-e)
                                                             (info rows-or-e "Cassandra error")
-                                                            (let [ data (first (vals (apply merge-with concat rows-or-e)))
-                                                                   avg (averagerollup data) ]
+                                                            (if (seq rows-or-e) 
+                                                                (let [ data (first (vals (apply merge-with concat rows-or-e)))
+                                                                      avg (averagerollup data) ]
                                                                     (alia/execute session istmt 
                                                                         {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
-                                                                        :consistency :any})))))))))))))
+                                                                        :consistency :any}))))))))))))))
              (catch Exception e
                     (info e (str "Store processing exception: " (.getMessage e)))))))
 	ch))
