@@ -296,7 +296,8 @@
                                                            :consistency :any})))))
                                             (fn [rows-or-e]
                                                 (if (instance? Throwable rows-or-e)
-                                                    (info rows-or-e "Cassandra error"))))))))
+                                                    (info rows-or-e "Cassandra error")))
+                                            (not nil?))))))
              )))
              (catch Exception e
                     (info e (str "Store processing exception: " (.getMessage e)))))))
