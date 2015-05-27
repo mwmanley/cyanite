@@ -295,7 +295,7 @@
                                                             (if (seq rows-or-e) 
                                                                 (let [ data (first (vals (apply merge-with concat rows-or-e)))
                                                                       avg (averagerollup data) ]
-                                                                    (alia/execute session istmt 
+                                                                    (alia/execute-chan session istmt 
                                                                         {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
                                                                         :consistency :any}))))))))))))))
              (catch Exception e
