@@ -288,11 +288,11 @@
                                                 (doseq [ rollpath rollpaths ] 
                                                     (addprocrollups rollstr (inc time))
                                                     ; process all the rollups
-                                                    (let [ rollval (alia/execute session fstmt {:values [rollpath lowrollup lowperiod (- time rollup) time] }) ]
+                                                    (let [ rollval (alia/execute-chan session fstmt {:values [rollpath lowrollup lowperiod (- time rollup) time] }) ]
                                                     (if rollval 
                                                         (let [ data (first (vals (apply merge-with concat rollval)))
                                                          avg (averagerollup data) ]
-                                                            (alia/execute session istmt 
+                                                            (alia/execute-chan session istmt 
                                                               {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
                                                                :consistency :any})))))
                                                 (fn [rows-or-e]
