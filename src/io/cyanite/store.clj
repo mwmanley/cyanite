@@ -283,23 +283,20 @@
                                     (addprepstatements session insertsql)
                                     ; Do rollups along boundaries only and try to prevent re-rolls
                                     (if (and (== 0 (rem lowtime vrollup))(< rollvar time)) ( 
-                                        (try
+                                        (doseq [ rollpath rollpaths ] 
+                                            (addprocrollups rollstr (inc time))
+                                            ; process all the rollups
                                             (take! 
-                                                (doseq [ rollpath rollpaths ] 
-                                                    (addprocrollups rollstr (inc time))
-                                                    ; process all the rollups
-                                                    (let [ rollval (alia/execute-chan session fstmt {:values [rollpath lowrollup lowperiod (- time rollup) time] }) ]
-                                                    (if rollval 
-                                                        (let [ data (first (vals (apply merge-with concat rollval)))
-                                                         avg (averagerollup data) ]
-                                                            (alia/execute-chan session istmt 
-                                                              {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
-                                                               :consistency :any})))))
-                                                (fn [rows-or-e]
-                                                    (if (instance? Throwable rows-or-e)
-                                                        (info rows-or-e "Cassandra error")))
-                                                )
-                                        (catch Exception e (debug e "Cannot write rollup " (.getMessage e)))))))))))
+                                                (alia/execute-chan session fstmt 
+                                                  {:values [rollpath lowrollup lowperiod (- time rollup) time] })
+                                                    (fn [rows-or-e]
+                                                        (if (instance? Throwable rows-or-e)
+                                                            (info rows-or-e "Cassandra error")
+                                                            (let [ data (first (vals (apply merge-with concat rows-or-e)))
+                                                                   avg (averagerollup data) ]
+                                                                    (alia/execute session istmt 
+                                                                        {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
+                                                                        :consistency :any})))))))))))))
              (catch Exception e
                     (info e (str "Store processing exception: " (.getMessage e)))))))
 	ch))
