@@ -269,7 +269,7 @@
                                             (if (instance? Throwable rows-or-e)
                                                 (info rows-or-e "Cassandra error")
                                             )))))
-				            (if ( > idx 0) (
+				            (if ( > idx 0) 
                                 (let [ [table vs rollup] (vals i)
                                         fetchsql (makerollupfetchquery lowtable)
                                         insertsql (makerollupinsertquery table)
@@ -281,20 +281,25 @@
                                         rollvar (or (getprocrollups rollstr) 0)]
                                     (addprepstatements session fetchsql)
                                     (addprepstatements session insertsql)
-                                        ; Do rollups along boundaries only and try to prevent re-rolls
+                                    ; Do rollups along boundaries only and try to prevent re-rolls
                                     (if (and (== 0 (rem lowtime vrollup))(< rollvar time)) ( 
-                                        (doseq [ rollpath rollpaths ] 
-                                            (addprocrollups rollstr (inc time))
-                                            ; process all the rollups
-                                            (let [ rollval (alia/execute session fstmt {:values [rollpath lowrollup lowperiod (- time rollup) time] }) 
-                                                   data (first (vals (apply merge-with concat rollval)))
-                                                   avg (averagerollup data) ]
-                                                (alia/execute session istmt 
-                                                  {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
-                                                   :consistency :any})))
-                                    ))))))))
+                                        (take! 
+                                            (doseq [ rollpath rollpaths ] 
+                                                (addprocrollups rollstr (inc time))
+                                                ; process all the rollups
+                                                (let [ rollval (alia/execute session fstmt {:values [rollpath lowrollup lowperiod (- time rollup) time] }) ]
+                                                (if rollval 
+                                                    (let [ data (first (vals (apply merge-with concat rollval)))
+                                                         avg (averagerollup data) ]
+                                                        (alia/execute session istmt 
+                                                          {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
+                                                           :consistency :any})))))
+                                            (fn [rows-or-e]
+                                                (if (instance? Throwable rows-or-e)
+                                                    (info rows-or-e "Cassandra error"))))))))
+             )))
              (catch Exception e
-                    (info e "Store processing exception")))))
+                    (info e (str "Store processing exception: " (.getMessage e)))))))
 	ch))
 	(fetch [this agg table paths tenant rollup period from to]
 		(addprepstatements session (makefetchquery table))
