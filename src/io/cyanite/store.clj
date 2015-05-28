@@ -276,31 +276,32 @@
                                         [ttl metric vrollup period junk time] (first vs)
                                         fstmt (getprepstatements fetchsql)
                                         istmt (getprepstatements insertsql)
-                                        rollpaths (keys (group-by :path (sort-by :path paths)))
-                                        rollstr (str (first rollpaths) vrollup) 
-                                        rollvar (or (getprocrollups rollstr) 0)]
+                                        rollpaths (keys (group-by :path (sort-by :path paths))) ]
                                     (addprepstatements session fetchsql)
                                     (addprepstatements session insertsql)
                                     ; Do rollups along boundaries only and try to prevent re-rolls
-                                    (if (and (== 0 (rem lowtime vrollup))(< rollvar time)) ( 
-                                        (doseq [ rollpath rollpaths ] 
-                                            (addprocrollups rollstr (inc time))
-                                            ; process all the rollups
-                                            (try
-                                              (take! 
-                                                (alia/execute-chan session fstmt 
-                                                  {:values [rollpath lowrollup lowperiod (- time rollup) time] })
-                                                    (fn [rows-or-e]
-                                                        (if (instance? Throwable rows-or-e)
-                                                            (info rows-or-e "Cassandra error")
-                                                            (if (seq rows-or-e) 
-                                                                (let [ data (first (vals (apply merge-with concat rows-or-e)))
-                                                                      avg (averagerollup data) ]
-                                                                    (alia/execute-chan session istmt 
-                                                                        {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
-                                                                        :consistency :any}))))))
-                                            (catch Exception e
-                                                (info e (str "Rollup processing exception on path: " rollpath (.getMessage e)))))))))))))
+                                    (doseq [ rollpath rollpaths ] 
+                                        (let [ rollstr (str rollpath vrollup)
+                                                rollvar (or (getprocrollups rollstr) 0)]
+                                            (if (and (== 0 (rem lowtime vrollup))(< rollvar time)) ( 
+                                                (addprocrollups rollstr (inc time))
+                                                ; process all the rollups
+                                                (try
+                                                    (take! 
+                                                        (alia/execute-chan session fstmt 
+                                                            {:values [rollpath lowrollup lowperiod (- time rollup) time]
+                                                             :fetch-size Integer/MAX_VALUE})
+                                                        (fn [rows-or-e]
+                                                            (if (instance? Throwable rows-or-e)
+                                                                (info rows-or-e "Cassandra error")
+                                                                (if (seq rows-or-e) 
+                                                                    (let [ data (first (vals (apply merge-with concat rows-or-e)))
+                                                                        avg (averagerollup data) ]
+                                                                        (alia/execute-chan session istmt 
+                                                                            {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
+                                                                             :consistency :any}))))))
+                                                    (catch Exception e
+                                                        (info e (str "Rollup processing exception on path: " rollpath (.getMessage e))))))))))))))
              (catch Exception e
                     (info e (str "Store processing exception: " (.getMessage e)))))))
 	ch))
