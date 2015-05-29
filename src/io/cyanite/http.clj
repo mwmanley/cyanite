@@ -34,7 +34,7 @@
   "Find most precise storage period given the oldest point wanted"
   [from rollups]
   (let [within (fn [{:keys [rollup period] :as rollup-def}]
-                 (and (>= (Long/parseLong from) (- (now) (* rollup period)))
+                 (and (>= (Long/parseLong from) (- (now) period))
                       rollup-def))]
     (some within (sort-by :rollup rollups))))
 
