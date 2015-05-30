@@ -283,7 +283,7 @@
                                     (doseq [ rollpath rollpaths ] 
                                         (let [ rollstr (str rollpath vrollup)
                                                 rollvar (or (getprocrollups rollstr) 0)]
-                                            (if (and (== 0 (rem lowtime vrollup))(< rollvar time)) ( 
+                                            (if (< (+ rollvar rollup) time) ( 
                                                 (addprocrollups rollstr (inc time))
                                                 ; process all the rollups
                                                 (try
