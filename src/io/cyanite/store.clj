@@ -281,7 +281,7 @@
                                     (addprepstatements session insertsql)
                                     ; Do rollups along boundaries only and try to prevent re-rolls
                                     (doseq [ rollpath rollpaths ] 
-                                        (let [ rollstr (str rollpath vrollup)
+                                        (let [ rollstr (str rollpath rollup)
                                                 rollvar (or (getprocrollups rollstr) 0)]
                                             (if (< (+ rollvar rollup) time) ( 
                                                 (addprocrollups rollstr (inc time))
