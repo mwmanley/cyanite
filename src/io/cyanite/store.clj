@@ -15,6 +15,12 @@
 
 (set! *warn-on-reflection* true)
 
+; cribbed from http
+(defn unixnow
+  "Returns a unix epoch"
+  []
+  (quot (System/currentTimeMillis) 1000))
+
 ; Define an atom to be used for prepared statements dynamically
 ; generated
 (def p (atom {}))
@@ -255,7 +261,7 @@
                                 { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
                             payload) 
                      paths (map
-                            #(let [{:keys [path]} %] { :path path }) payload) 
+                            #(let [{:keys [path time]} %] { :path path :time time}) payload) 
                     ]
                     (let [ [lowtable [lowttl lowmetric lowroll lowperiod lowpath lowtime] lowrollup] (vals (apply min-key :rollup inserts)) ]
                         (doseq [[idx i] (enum (sort-by :rollup (groupvalues inserts)))]
@@ -271,6 +277,7 @@
                                             )))))
 				            (if (and ( > idx 0) (seq paths))
                                 (let [ [table vs rollup] (vals i)
+                                        now (unixnow)
                                         fetchsql (makerollupfetchquery lowtable)
                                         insertsql (makerollupinsertquery table)
                                         [ttl metric vrollup period junk time] (first vs)
@@ -283,13 +290,13 @@
                                     (doseq [ rollpath rollpaths ] 
                                         (let [ rollstr (str rollpath rollup)
                                                 rollvar (or (getprocrollups rollstr) 0)]
-                                            (if (< (+ rollvar rollup) time) ( 
-                                                (addprocrollups rollstr (inc time))
+                                            (if (< (+ rollvar rollup) now) ( 
+                                                (addprocrollups rollstr time)
                                                 ; process all the rollups
                                                 (try
                                                     (take! 
                                                         (alia/execute-chan session fstmt 
-                                                            {:values [rollpath lowrollup lowperiod (- time rollup) time]
+                                                            {:values [rollpath lowrollup lowperiod (- time rollvar) rollvar]
                                                              :fetch-size Integer/MAX_VALUE})
                                                         (fn [rows-or-e]
                                                             (if (instance? Throwable rows-or-e)
