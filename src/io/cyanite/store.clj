@@ -15,12 +15,6 @@
 
 (set! *warn-on-reflection* true)
 
-; cribbed from http
-(defn unixnow
-  "Returns a unix epoch"
-  []
-  (quot (System/currentTimeMillis) 1000))
-
 ; Define an atom to be used for prepared statements dynamically
 ; generated
 (def p (atom {}))
@@ -277,7 +271,6 @@
                                             )))))
 				            (if (and ( > idx 0) (seq paths))
                                 (let [ [table vs rollup] (vals i)
-                                        now (unixnow)
                                         fetchsql (makerollupfetchquery lowtable)
                                         insertsql (makerollupinsertquery table)
                                         [ttl metric vrollup period junk time] (first vs)
@@ -289,14 +282,14 @@
                                     ; Do rollups along boundaries only and try to prevent re-rolls
                                     (doseq [ rollpath rollpaths ] 
                                         (let [ rollstr (str rollpath rollup)
-                                                rollvar (or (getprocrollups rollstr) 0)]
-                                            (if (< (+ rollvar rollup) now) ( 
-                                                (addprocrollups rollstr time)
+                                                rollvar (or (getprocrollups rollstr) time)]
+                                            (if (<= rollvar time) ( 
+                                                (addprocrollups rollstr (+ rollup time))
                                                 ; process all the rollups
                                                 (try
                                                     (take! 
                                                         (alia/execute-chan session fstmt 
-                                                            {:values [rollpath lowrollup lowperiod (- time rollvar) rollvar]
+                                                            {:values [rollpath lowrollup lowperiod (- time rollup) time]
                                                              :fetch-size Integer/MAX_VALUE})
                                                         (fn [rows-or-e]
                                                             (if (instance? Throwable rows-or-e)
