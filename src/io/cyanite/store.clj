@@ -157,9 +157,7 @@
       (dissoc :data)
       (assoc :metric data)))
 
-(defn max-points
-  "Returns the maximum number of points to expect for
-   a given resolution, time range and number of paths"
+(defn max-points "Returns the maximum number of points to expect for a given resolution, time range and number of paths"
   [paths rollup from to]
   (-> (- to from)
       (/ rollup)
@@ -183,7 +181,8 @@
   [^PreparedStatement s values]
   (let [b (BatchStatement.)]
     (doseq [v values]
-      (.add b (.bind s (into-array Object v))))
+      (if (some number? (second v)) 
+        (.add b (.bind s (into-array Object v)))))
     b))
 
 ; Function for creating a prepared statements object
