@@ -237,7 +237,11 @@
            batch_size 500}}]
   (info "creating cassandra metric store")
 (let [cluster (if (sequential? cluster) cluster [cluster]) 
-      session (-> {:contact-points cluster}
+      session (-> {:contact-points cluster
+                   :jmx-reporting? true
+                   :keep-alive? true
+                   :compression :lz4
+                   :max-connections-per-host  {:remote 50  :local 200}}
           (cond-> (and username password)
                    (assoc :credentials {:user username :password password}))
           (alia/cluster)
@@ -290,16 +294,18 @@
                                                     (take! 
                                                         (alia/execute-chan session fstmt 
                                                             {:values [rollpath lowrollup lowperiod (- time rollup) time]
-                                                             :fetch-size Integer/MAX_VALUE})
+                                                             :fetch-size Integer/MAX_VALUE
+                                                             :consistency :local_one})
                                                         (fn [rows-or-e]
                                                             (if (instance? Throwable rows-or-e)
                                                                 (info rows-or-e "Cassandra error")
                                                                 (if (seq rows-or-e) 
                                                                     (let [ data (first (vals (apply merge-with concat rows-or-e)))
                                                                         avg (averagerollup data) ]
-                                                                        (alia/execute-chan session istmt 
-                                                                            {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
-                                                                             :consistency :any}))))))
+                                                                        (if (number? avg)
+                                                                            (alia/execute-chan session istmt 
+                                                                                {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
+                                                                                :consistency :any})))))))
                                                     (catch Exception e
                                                         (info e (str "Rollup processing exception on path: " rollpath (.getMessage e))))))))))))))
              (catch Exception e
@@ -313,7 +319,8 @@
                                  session (getprepstatements (makefetchquery table))
                                  {:values [paths (int rollup) (int period)
                                            from to]
-                                  :fetch-size Integer/MAX_VALUE})
+                                  :fetch-size Integer/MAX_VALUE
+                                  :consistency :local_one})
                                 (map (partial aggregate-with (keyword agg)))
                                 (seq)))]
           (let [min-point  (:time (first data))
