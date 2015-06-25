@@ -320,23 +320,16 @@
                                   :consistency :local_one})
                                 (map (partial aggregate-with (keyword agg)))
                                 (seq)))]
-          (let [min-point  (:time (first data))
-                max-point  (-> to (quot rollup) (* rollup))
-                nil-points (->> (range from (inc to) rollup)
+          (let [nil-points (->> (range from (inc to) rollup)
                                 (map (fn [time] {time [{:time time}]}))
                                 (reduce merge {}))
                 by-path    (->> (group-by :path data)
                                 (map (partial fill-in nil-points))
                                 (reduce merge {}))]
-            (if (some number? (second (first by-path)))
                 {:from from
                  :to to
                  :step rollup
-                 :series by-path}
-                {:from from
-                 :to   to
-                 :step rollup
-                 :series {}}))
+                 :series by-path})
           {:from from
            :to to
            :step rollup
