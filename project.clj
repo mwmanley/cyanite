@@ -16,7 +16,7 @@
                  [clj-http                      "1.0.1"
                   :exclusions [commons-codec]]
                  [cc.qbits/jet                  "0.6.4"]
-                 [cc.qbits/alia                 "2.5.1"]
+                 [cc.qbits/alia                 "2.5.3"]
                  [net.jpountz.lz4/lz4           "1.2.0"]
                  [org.xerial.snappy/snappy-java "1.1.1.3"]
                  [io.netty/netty-all            "4.0.28.Final"]

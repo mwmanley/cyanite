@@ -5,6 +5,7 @@
    swap implementations"
   (:require [clojure.string        :as str]
             [qbits.alia            :as alia]
+            [qbits.alia.policy.load-balancing :as lb]
             [io.cyanite.util       :refer [partition-or-time
                                            go-forever go-catch]]
             [clojure.tools.logging :refer [error info debug]]
@@ -234,10 +235,12 @@
            batch_size 500}]
   (info "creating cassandra metric store")
 (let [cluster (if (sequential? cluster) cluster [cluster]) 
+      rrpolicy (lb/round-robin-policy)
       session (-> {:contact-points cluster
                    :jmx-reporting? true
                    :keep-alive? true
                    :compression :lz4
+                   :load-balancing-policy (lb/token-aware-policy rrpolicy)
                    :max-connections-per-host  {:remote 50  :local 200}}
           (cond-> (and username password)
                    (assoc :credentials {:user username :password password}))
