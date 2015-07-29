@@ -295,7 +295,7 @@
                                                         (alia/execute-chan session fstmt 
                                                             {:values [rollpath lowrollup lowperiod (- time rollup) time]
                                                              :fetch-size Integer/MAX_VALUE
-                                                             :consistency :local_one})
+                                                             :consistency :local-one})
                                                         (fn [rows-or-e]
                                                             (if (instance? Throwable rows-or-e)
                                                                 (info rows-or-e "Cassandra error")
@@ -320,7 +320,7 @@
                                  {:values [paths (int rollup) (int period)
                                            from to]
                                   :fetch-size Integer/MAX_VALUE
-                                  :consistency :local_one})
+                                  :consistency :local-one})
                                 (map (partial aggregate-with (keyword agg)))
                                 (seq)))]
           (let [ min-point  (-> from (quot rollup) (* rollup))
