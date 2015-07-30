@@ -241,7 +241,7 @@
                    :jmx-reporting? true
                    :keep-alive? true
                    :compression :lz4
-                   :max-connections-per-host  {:remote 50  :local 200}}
+                   :max-connections-per-host  {:remote 5  :local 20}}
           (cond-> (and username password)
                    (assoc :credentials {:user username :password password}))
           (alia/cluster)
@@ -295,7 +295,7 @@
                                                         (alia/execute-chan session fstmt 
                                                             {:values [rollpath lowrollup lowperiod (- time rollup) time]
                                                              :fetch-size Integer/MAX_VALUE
-                                                             :consistency :local-one})
+                                                             :consistency :one})
                                                         (fn [rows-or-e]
                                                             (if (instance? Throwable rows-or-e)
                                                                 (info rows-or-e "Cassandra error")
@@ -320,7 +320,7 @@
                                  {:values [paths (int rollup) (int period)
                                            from to]
                                   :fetch-size Integer/MAX_VALUE
-                                  :consistency :local-one})
+                                  :consistency :one})
                                 (map (partial aggregate-with (keyword agg)))
                                 (seq)))]
           (let [ min-point  (-> from (quot rollup) (* rollup))
