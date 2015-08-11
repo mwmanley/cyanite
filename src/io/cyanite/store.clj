@@ -92,7 +92,7 @@
 * `limit`: maximum number of points to return"
   [table]
    (str
-    "SELECT data FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
+    "SELECT path, data FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
     "AND time >= ? AND time < ? ORDER BY time ASC;"))
 
 (defn makerollupinsertquery
@@ -227,16 +227,24 @@
   [data]
   (if (not= 0 (count data))(/ (apply + data) (count data)) nil))
 
+; Eval if the rollup is able to go
+(defn rollupvalid
+  [rollstr rolltime rollup time path]
+  (if (<= rolltime time)
+    (
+     (addprocrollups rollstr (+ rollup time))
+     path) nil
+  )
+)
+
 ; Eval if we're going to process this rollup
 (defn processrollups
-    [ttl metric rollup period rollpath time]
-    (println "here: " rollpath)
-    (let [ rollstr (str rollpath rollup)
-         rollvar (or (getprocrollups rollstr) time)]
-         (if (<= rollvar time)
-            (addprocrollups rollstr (+ rollup time))
-         )
-    )
+  [vs]
+  (let [[ttl metric rollup period path time] vs
+        rollstr (str path rollup)
+        rolltime (or (getprocrollups rollstr) time)
+        rollpath (rollupvalid rollstr rolltime rollup time path)]
+  path)
 )
 
 (defn cassandra-metric-store
@@ -291,11 +299,10 @@
                                   [ttl metric vrollup period junk time] (first vs)
                                   fstmt (getprepstatements fetchsql)
                                   istmt (getprepstatements insertsql)
-                                  rollpaths (keys (group-by :path (sort-by :path paths))) ]
+                                  rollpaths (map processrollups vs) ]
                             (addprepstatements session fetchsql)
                             (addprepstatements session insertsql)
-                            (println "Rollpaths to process are: " rollpaths)
-                              ; Do rollups along boundaries only and try to prevent re-rolls
+                            ; Do rollups along boundaries only and try to prevent re-rolls
                             (if (seq rollpaths)
                               (try
                                 (take!
@@ -309,6 +316,7 @@
                                        (if (seq rows-or-e)
                                          (let [ data (first (vals (apply merge-with concat rows-or-e)))
                                                 avg (averagerollup data) ]
+                                           (println "Data are: " rows-or-e)
                                            (if (number? avg)
                                              (alia/execute-chan session istmt
                                                                 {:values [(int ttl) [avg] (int rollup) (int period) rollpaths time]
