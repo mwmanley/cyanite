@@ -50,21 +50,6 @@
     " USING TTL ? SET data = data + ? "
     "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
 
-(defn makerollupinsertquery
-  "Yields a cassandra prepared statement of 6 arguments:
-
-* `ttl`: how long to keep the point around
-* `metric`: the data point
-* `rollup`: interval between points at this resolution
-* `period`: rollup multiplier which determines the time to keep points for
-* `path`: name of the metric
-* `time`: timestamp of the metric, should be divisible by rollup"
-  [table]
-   (str
-    "UPDATE " table
-    " USING TTL ? SET data = ? "
-    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
-
 ; Dynamic fetching
 (defn makefetchquery
   "Yields a cassandra prepared statement of 6 arguments:
@@ -92,23 +77,8 @@
 * `limit`: maximum number of points to return"
   [table]
    (str
-    "SELECT path, data FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
+    "SELECT data, path FROM " table " WHERE path IN ? AND tenant = '' AND rollup = ? AND period = ? "
     "AND time >= ? AND time < ? ORDER BY time ASC;"))
-
-(defn makerollupinsertquery
-  "Yields a cassandra prepared statement of 6 arguments:
-
-* `ttl`: how long to keep the point around
-* `metric`: the data point
-* `rollup`: interval between points at this resolution
-* `period`: rollup multiplier which determines the time to keep points for
-* `path`: name of the metric
-* `time`: timestamp of the metric, should be divisible by rollup"
-  [table]
-   (str
-    "UPDATE " table
-    " USING TTL ? SET data = ? "
-    "WHERE tenant = '' AND rollup = ? AND period = ? AND path = ? AND time = ?;"))
 
 (defn useq
   "Yields a cassandra use statement for a keyspace"
@@ -213,8 +183,11 @@
   [data]
   (->> (group-by :rollup data)
        (map (fn [[k v ]]
-              {:table (get (mapv second (mapv first v)) 0) :v (mapv second (mapv second v)) :rollup k}))
+              {:table (get (mapv second (mapv first v)) 0)
+               :v (mapv second (mapv second v))
+               :rollup k}))
        (into [])))
+
 
 ; Clojure doesn't have a for loop like C, so we have to make it do that
 (defn enum
@@ -227,14 +200,19 @@
   [data]
   (if (not= 0 (count data))(/ (apply + data) (count data)) nil))
 
+(defn groupdataforrollups
+  [data]
+  (->> (group-by :path data)
+       (map (fn [[k v ]]
+              {:avg (averagerollup (into [] (flatten (mapv second (mapv first v)))))
+               :rpath k}))
+       (into [])))
+
+
 ; Eval if the rollup is able to go
 (defn rollupvalid
   [rollstr rolltime rollup time path]
-  (if (<= rolltime time)
-    (
-     (addprocrollups rollstr (+ rollup time))
-     path) nil
-  )
+  (if (<= rolltime time) path nil)
 )
 
 ; Eval if we're going to process this rollup
@@ -244,7 +222,8 @@
         rollstr (str path rollup)
         rolltime (or (getprocrollups rollstr) time)
         rollpath (rollupvalid rollstr rolltime rollup time path)]
-  path)
+    (if-not (nil? rollpath) (addprocrollups rollstr (inc (+ rollup time))))
+  rollpath)
 )
 
 (defn cassandra-metric-store
@@ -276,11 +255,12 @@
              (try
                (let [inserts (map
                             #(let [{:keys [table metric path time rollup period ttl]} %]
-                                { :table table :v [(int ttl) [metric] (int rollup) (int period) path time] :rollup rollup })
+                                { :table table
+                                  :v [(int ttl) [metric] (int rollup) (int period) path time]
+                                  :rollup rollup })
                             payload)
-                     paths (map
-                            #(let [{:keys [path time]} %] { :path path :time time}) payload)
                     ]
+                    ; This finds the lowest rollup value and associated info.  These are our "raw" data.
                     (let [ [lowtable [lowttl lowmetric lowroll lowperiod lowpath lowtime] lowrollup] (vals (apply min-key :rollup inserts)) ]
                       (doseq [[idx i] (enum (sort-by :rollup (groupvalues inserts)))]
                         (if (= idx 0)
@@ -292,17 +272,18 @@
                              (fn [rows-or-e]
                                (if (instance? Throwable rows-or-e)
                                  (info rows-or-e "Cassandra error"))))))
-                        (if (and ( > idx 0) (seq paths))
+                        (if (> idx 0)
                           (let [ [table vs rollup] (vals i)
                                   fetchsql (makerollupfetchquery lowtable)
-                                  insertsql (makerollupinsertquery table)
+                                  insertsql (makeinsertquery table)
                                   [ttl metric vrollup period junk time] (first vs)
                                   fstmt (getprepstatements fetchsql)
                                   istmt (getprepstatements insertsql)
-                                  rollpaths (map processrollups vs) ]
+                                  rollpaths (remove nil? (map processrollups vs)) ]
                             (addprepstatements session fetchsql)
                             (addprepstatements session insertsql)
                             ; Do rollups along boundaries only and try to prevent re-rolls
+                            ;(println "Rollup period is: " vrollup " and rollups are: " rollpaths)
                             (if (seq rollpaths)
                               (try
                                 (take!
@@ -314,17 +295,20 @@
                                    (if (instance? Throwable rows-or-e)
                                        (info rows-or-e "Cassandra error")
                                        (if (seq rows-or-e)
-                                         (let [ data (first (vals (apply merge-with concat rows-or-e)))
-                                                avg (averagerollup data) ]
-                                           (println "Data are: " rows-or-e)
-                                           (if (number? avg)
-                                             (alia/execute-chan session istmt
-                                                                {:values [(int ttl) [avg] (int rollup) (int period) rollpaths time]
-                                                                 :consistency :any})))))))
-                                  (catch Exception e
-                                    (info e (str "Rollup processing exception on path: " rollpaths (.getMessage e)))))))))))
-          (catch Exception e
-            (info e (str "Store processing exception: " (.getMessage e)))))))
+                                         (let [ averageddata (groupdataforrollups rows-or-e)
+                                                rolluprows (map
+                                                            #(let [{:keys [avg rpath]} %]
+                                                               [(int ttl) [avg] (int rollup) (int period) rpath time])
+                                                            averageddata ) ]
+                                           (take!
+                                            (alia/execute-chan session (batch (getprepstatements insertsql) rolluprows) {:consistency :any})
+                                              (fn [rows-or-e]
+                                                (if (instance? Throwable rows-or-e)
+                                                  (info rows-or-e "Cassandra error")))))))))
+                                (catch Exception e
+                                  (info e (str "Rollup store processing exception: " (.getMessage e)))))))))))
+             (catch Exception e
+               (info e (str "Store processing exception: " (.getMessage e)))))))
 	ch))
 	(fetch [this agg table paths tenant rollup period from to]
 		(addprepstatements session (makefetchquery table))
