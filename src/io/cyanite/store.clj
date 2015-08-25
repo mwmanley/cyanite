@@ -9,10 +9,14 @@
             [io.cyanite.util       :refer [partition-or-time
                                            go-forever go-catch]]
             [clojure.tools.logging :refer [error info debug]]
-            [clojure.core.async    :refer [take! <! >! go chan]])
+            [clojure.core.async    :refer [take! <! >! go chan]]
+            [mcache.core           :as memcache]
+            [mcache.spy])
   (:import [com.datastax.driver.core
             BatchStatement
-            PreparedStatement]))
+            PreparedStatement]
+           [clojure.core.cache CacheProtocol]
+           [mcache.core MemcachedCache]))
 
 (set! *warn-on-reflection* true)
 
@@ -20,8 +24,6 @@
 ; generated
 (def p (atom {}))
 
-; Define an atom to prevent rollups from looping during a period
-(def procrollups (atom {}))
 
 (defprotocol Metricstore
   (insert [this ttl data tenant rollup period path time])
@@ -180,14 +182,15 @@
   (if-not (getprepstatements sql)
   (swap! p assoc sql (alia/prepare session sql))))
 
+; Get last rollup time from memcache
 (defn getprocrollups
-  [rollstr]
-  (@procrollups rollstr))
+  [mc rollstr]
+  (memcache/fetch mc rollstr))
 
-; Add prepared statements and index by table name
+; Store last value in memcache
 (defn addprocrollups
-  [rollstr time]
-  (swap! procrollups assoc rollstr time))
+  [mc rollstr time]
+  (memcache/put mc rollstr time))
 
 ; Group these data by table name and consolidate the values.  We will
 ; ignore other components of these data being passed in.
@@ -211,10 +214,15 @@
   [data]
   (if (not= 0 (count data))(/ (apply + data) (count data)) nil))
 
+(defn get_mc_servers
+  [memcache_host]
+  (println "Host: " memcache_host)
+  (java.net.InetSocketAddress. memcache_host 11211))
+
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
-  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password ]
+  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password memcache_hosts]
            chan_size 10000
            batch_size 500}]
   (info "creating cassandra metric store")
@@ -229,7 +237,10 @@
           (cond-> (and username password)
                    (assoc :credentials {:user username :password password}))
           (alia/cluster)
-          (alia/connect keyspace)) ]
+          (alia/connect keyspace))
+      mc (net.spy.memcached.MemcachedClient. (into '() (map get_mc_servers memcache_hosts)))
+      ]
+    (println "MC hosts: " memcache_hosts)
     (reify
       Metricstore
       (channel-for [this]
@@ -273,9 +284,9 @@
                             ; Do rollups along boundaries only and try to prevent re-rolls
                             (doseq [ rollpath rollpaths ]
                               (let [ rollstr (str rollpath rollup)
-                                     rollvar (or (getprocrollups rollstr) time)]
+                                     rollvar (or (getprocrollups mc rollstr) time)]
                                 (if (<= rollvar time)
-                                   ((addprocrollups rollstr (+ rollup time))
+                                   ((addprocrollups mc rollstr (+ rollup time))
                                     (try
                                       (take!
                                        (alia/execute-chan session fstmt

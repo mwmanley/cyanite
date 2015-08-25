@@ -16,7 +16,8 @@
                  [clj-http                      "1.0.1"
                   :exclusions [commons-codec]]
                  [cc.qbits/jet                  "0.6.4"]
-                 [cc.qbits/alia                 "2.7.2"]
+                 [cc.qbits/alia                 "2.7.4"]
+                 [mcache "0.2.0"]
                  [com.datastax.cassandra/cassandra-driver-core                 "2.2.0-rc2"]
                  [net.jpountz.lz4/lz4           "1.2.0"]
                  [org.xerial.snappy/snappy-java "1.1.1.3"]
