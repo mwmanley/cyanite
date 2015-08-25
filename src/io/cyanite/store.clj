@@ -10,13 +10,10 @@
                                            go-forever go-catch]]
             [clojure.tools.logging :refer [error info debug]]
             [clojure.core.async    :refer [take! <! >! go chan]]
-            [mcache.core           :as memcache]
-            [mcache.spy])
+            [clojurewerkz.spyglass.client           :as mc])
   (:import [com.datastax.driver.core
             BatchStatement
-            PreparedStatement]
-           [clojure.core.cache CacheProtocol]
-           [mcache.core MemcachedCache]))
+            PreparedStatement]))
 
 (set! *warn-on-reflection* true)
 
@@ -182,16 +179,6 @@
   (if-not (getprepstatements sql)
   (swap! p assoc sql (alia/prepare session sql))))
 
-; Get last rollup time from memcache
-(defn getprocrollups
-  [mc rollstr]
-  (memcache/fetch mc rollstr))
-
-; Store last value in memcache
-(defn addprocrollups
-  [mc rollstr time]
-  (memcache/put mc rollstr time))
-
 ; Group these data by table name and consolidate the values.  We will
 ; ignore other components of these data being passed in.
 (defn groupvalues
@@ -214,15 +201,12 @@
   [data]
   (if (not= 0 (count data))(/ (apply + data) (count data)) nil))
 
-(defn get_mc_servers
-  [memcache_host]
-  (println "Host: " memcache_host)
-  (java.net.InetSocketAddress. memcache_host 11211))
 
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
-  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password memcache_hosts]
+  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password memcache_hosts memcache_expiration]
+           memcache_expiration 3600
            chan_size 10000
            batch_size 500}]
   (info "creating cassandra metric store")
@@ -238,9 +222,7 @@
                    (assoc :credentials {:user username :password password}))
           (alia/cluster)
           (alia/connect keyspace))
-      mc (net.spy.memcached.MemcachedClient. (into '() (map get_mc_servers memcache_hosts)))
-      ]
-    (println "MC hosts: " memcache_hosts)
+      mcsess (mc/text-connection memcache_hosts)]
     (reify
       Metricstore
       (channel-for [this]
@@ -284,27 +266,27 @@
                             ; Do rollups along boundaries only and try to prevent re-rolls
                             (doseq [ rollpath rollpaths ]
                               (let [ rollstr (str rollpath rollup)
-                                     rollvar (or (getprocrollups mc rollstr) time)]
-                                (if (<= rollvar time)
-                                   ((addprocrollups mc rollstr (+ rollup time))
-                                    (try
-                                      (take!
-                                       (alia/execute-chan session fstmt
+                                     rollvar (or (mc/get mcsess rollstr) time)]
+                                (if (<= rollvar time)(
+                                  (mc/set mcsess rollstr memcache_expiration (+ rollup time))
+                                  (try
+                                    (take!
+                                      (alia/execute-chan session fstmt
                                                           {:values [rollpath lowrollup lowperiod (- time rollup) time]
                                                            :fetch-size Integer/MAX_VALUE
                                                            :consistency :one})
-                                       (fn [rows-or-e]
-                                         (if (instance? Throwable rows-or-e)
-                                           (info rows-or-e "Cassandra error")
-                                           (if (seq rows-or-e)
-                                             (let [ data (first (vals (apply merge-with concat rows-or-e)))
-                                                    avg (averagerollup data) ]
-                                               (if (number? avg)
-                                                 (alia/execute-chan session istmt
-                                                                    {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
-                                                                     :consistency :any})))))))
-                                      (catch Exception e
-                                        (info e (str "Rollup processing exception on path: " rollpath (.getMessage e))))))))))))))
+                                      (fn [rows-or-e]
+                                        (if (instance? Throwable rows-or-e)
+                                          (info rows-or-e "Cassandra error")
+                                          (if (seq rows-or-e)
+                                            (let [ data (first (vals (apply merge-with concat rows-or-e)))
+                                                   avg (averagerollup data) ]
+                                              (if (number? avg)
+                                                (alia/execute-chan session istmt
+                                                                   {:values [(int ttl) [avg] (int rollup) (int period) rollpath time]
+                                                                    :consistency :any})))))))
+                                     (catch Exception e
+                                       (info e (str "Rollup processing exception on path: " rollpath (.getMessage e))))))))))))))
                (catch Exception e
                  (info e (str "Store processing exception: " (.getMessage e)))))))
 	ch))
