@@ -10,7 +10,7 @@
                                            go-forever go-catch]]
             [clojure.tools.logging :refer [error info debug]]
             [clojure.core.async    :refer [take! <! >! go chan]]
-            [clojurewerkz.spyglass.client           :as mc])
+            [taoensso.carmine :as car :refer (wcar)])
   (:import [com.datastax.driver.core
             BatchStatement
             PreparedStatement]))
@@ -205,8 +205,7 @@
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
-  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password memcache_hosts memcache_expiration]
-           memcache_expiration 3600
+  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password redis_hosts redis_expiration]
            chan_size 10000
            batch_size 500}]
   (info "creating cassandra metric store")
@@ -222,7 +221,7 @@
                    (assoc :credentials {:user username :password password}))
           (alia/cluster)
           (alia/connect keyspace))
-      mcsess (mc/text-connection memcache_hosts)]
+      rsession {:pool {:max-active 8} :spec {:host redis_hosts :port 6379 :timeout 4000}} ]
     (reify
       Metricstore
       (channel-for [this]
@@ -266,9 +265,10 @@
                             ; Do rollups along boundaries only and try to prevent re-rolls
                             (doseq [ rollpath rollpaths ]
                               (let [ rollstr (str rollpath rollup)
-                                     rollvar (or (mc/get mcsess rollstr) time)]
+                                     rollvar (or (car/wcar rsession (car/get rollstr)) time)]
                                 (if (<= rollvar time)(
-                                  (mc/set mcsess rollstr memcache_expiration (+ rollup time))
+                                  (car/wcar rsession (car/set rollstr (+ rollup time)))
+                                  (println "Setting value in redis")
                                   (try
                                     (take!
                                       (alia/execute-chan session fstmt
