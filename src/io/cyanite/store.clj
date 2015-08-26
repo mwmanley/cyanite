@@ -216,7 +216,6 @@
 
 (defn get_mc_servers
   [memcache_host]
-  (println "Host: " memcache_host)
   (java.net.InetSocketAddress. memcache_host 11211))
 
 (defn cassandra-metric-store
@@ -226,7 +225,7 @@
            chan_size 10000
            batch_size 500}]
   (info "creating cassandra metric store")
-(let [cluster (if (sequential? cluster) cluster [cluster])
+  (let [cluster (if (sequential? cluster) cluster [cluster])
       rrpolicy (lb/round-robin-policy)
       session (-> {:load-balancing-policy (lb/token-aware-policy rrpolicy)
                    :contact-points cluster
@@ -240,7 +239,6 @@
           (alia/connect keyspace))
       mc (net.spy.memcached.MemcachedClient. (into '() (map get_mc_servers memcache_hosts)))
       ]
-    (println "MC hosts: " memcache_hosts)
     (reify
       Metricstore
       (channel-for [this]
@@ -284,9 +282,9 @@
                             ; Do rollups along boundaries only and try to prevent re-rolls
                             (doseq [ rollpath rollpaths ]
                               (let [ rollstr (str rollpath rollup)
-                                     rollvar (or (getprocrollups mc rollstr) time)]
+                                     rollvar (or (memcache/fetch mc rollstr) time)]
                                 (if (<= rollvar time)
-                                   ((addprocrollups mc rollstr (+ rollup time))
+                                   ((memcache/put mc rollstr (+ rollup time))
                                     (try
                                       (take!
                                        (alia/execute-chan session fstmt
