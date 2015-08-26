@@ -221,7 +221,7 @@
 (defn cassandra-metric-store
   "Connect to cassandra and start a path fetching thread.
    The interval is fixed for now, at 1minute"
-  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password memcache_hosts]
+  [{:keys [keyspace cluster hints repfactor chan_size batch_size username password memcache_hosts memcache_expiration]
            chan_size 10000
            batch_size 500}]
   (info "creating cassandra metric store")
@@ -284,7 +284,7 @@
                               (let [ rollstr (str rollpath rollup)
                                      rollvar (or (memcache/fetch mc rollstr) time)]
                                 (if (<= rollvar time)
-                                   ((memcache/put mc rollstr (+ rollup time))
+                                   (
                                     (try
                                       (take!
                                        (alia/execute-chan session fstmt
@@ -296,6 +296,7 @@
                                            (info rows-or-e "Cassandra error")
                                            (if (seq rows-or-e)
                                              (let [ data (first (vals (apply merge-with concat rows-or-e)))
+                                                    mc_future (memcache/put mc rollstr (+ rollup time) memcache_expiration)
                                                     avg (averagerollup data) ]
                                                (if (number? avg)
                                                  (alia/execute-chan session istmt
