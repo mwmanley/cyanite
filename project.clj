@@ -6,21 +6,21 @@
   :maintainer {:email "pyr@spootnik.org"}
   :aot :all
   :main io.cyanite
-  :dependencies [[org.clojure/clojure           "1.7.0-beta3"]
+  :dependencies [[org.clojure/clojure           "1.7.0"]
                  [org.clojure/tools.logging     "0.3.1"]
                  [org.clojure/tools.cli         "0.3.1"]
-                 [org.spootnik/pickler          "0.1.0"]
+                 [org.spootnik/pickler          "0.1.1"]
                  [org.spootnik/logconfig        "0.7.3"]
                  [ring/ring-codec               "1.0.0"]
                  [clj-yaml                      "0.4.0"]
-                 [clj-http                      "1.0.1"
+                 [clj-http                      "2.0.0"
                   :exclusions [commons-codec]]
-                 [cc.qbits/jet                  "0.6.4"]
-                 [cc.qbits/alia                 "2.7.2"]
-                 [com.datastax.cassandra/cassandra-driver-core                 "2.2.0-rc2"]
+                 [cc.qbits/jet                  "0.6.6"]
+                 [cc.qbits/alia                 "2.9.0"]
+                 [com.datastax.cassandra/cassandra-driver-core                 "2.2.0-rc3"]
                  [net.jpountz.lz4/lz4           "1.2.0"]
                  [org.xerial.snappy/snappy-java "1.1.1.3"]
-                 [io.netty/netty-all            "4.0.28.Final"]
+                 [io.netty/netty-all            "4.0.32.Final"]
                  [org.clojure/core.async        "0.1.346.0-17112a-alpha"]
-                 [clojurewerkz/elastisch        "2.2.0-beta3"
+                 [clojurewerkz/elastisch        "2.2.0-beta4"
                   :exclusions [com.google.guava/guava commons-codec]]])
