@@ -306,7 +306,7 @@
                                  {:values [paths (int rollup) (int period)
                                            from to]
                                   :fetch-size Integer/MAX_VALUE
-                                  :consistency :one})
+                                  :consistency :quorum})
                                 (map (partial aggregate-with (keyword agg)))
                                 (seq)))]
           (let [ min-point  (-> from (quot rollup) (* rollup))
