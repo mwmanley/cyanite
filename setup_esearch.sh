@@ -11,6 +11,10 @@ curl -XPOST localhost:9200/cyanite_paths -d '{
             "enabled" : true,
             "store" : true
         },
+        "_ttl" : {
+            "enabled" : true,
+            "default" : "1d",
+        },
     "properties":{
             "depth":{
             "type":"long"
