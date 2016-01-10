@@ -45,11 +45,12 @@
     op-or-doc))
 
 (defn multi-update
-  [^Connection conn index mapping-type docs func]
+  [^Connection conn index ttl mapping-type docs func]
   (bulk-with-url (rest/bulk-url conn index mapping-type)
                  (map
                   remove-ids-from-docs
                   (esrb/bulk-index (map #(assoc % :_id (:path %)
                                                 :_index index
+                                                :_ttl ttl
                                                 :_type mapping-type) docs)))
                  func))

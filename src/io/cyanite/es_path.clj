@@ -21,6 +21,8 @@
                                          :index "not_analyzed"}
                                 :path   {:type "string"
                                          :index "not_analyzed"}}
+                               :_ttl    {:enabled true
+                                         :default 86400}
                                :_timestamp {:enabled true
                                             :store true}}})
 ;cache disabled, see impact of batching
@@ -118,20 +120,20 @@
                     paths))))))))
 
 (defn bulk-update
-  [conn index type]
+  [conn index type ttl]
   (fn [paths]
     (internal-client/multi-update
-     conn index type paths
+     conn index ttl type paths
      #(debug "Failed bulk update, full response: " %))))
 
 (defn es-rest
-  [{:keys [index url chan_size batch_size]
+  [{:keys [index url chan_size batch_size ttl]
     :or {index "cyanite_paths" url "http://localhost:9200"
-         chan_size 10000 batch_size 1000}}]
+         chan_size 10000 batch_size 1000 ttl 86400}}]
   (let [full-path-cache (atom #{})
         conn (esr/connect url)
         dontexistsfn (dont-exist conn index ES_DEF_TYPE)
-        bulkupdatefn (bulk-update conn index ES_DEF_TYPE)
+        bulkupdatefn (bulk-update conn index ES_DEF_TYPE ttl)
         existsfn (partial esrd/present? conn index ES_DEF_TYPE)
         updatefn (partial esrd/put conn index ES_DEF_TYPE)
         scrollfn (partial esrd/scroll-seq conn)
