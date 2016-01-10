@@ -129,7 +129,7 @@
 (defn es-rest
   [{:keys [index url chan_size batch_size ttl]
     :or {index "cyanite_paths" url "http://localhost:9200"
-         chan_size 10000 batch_size 1000 ttl 86400}}]
+         chan_size 10000 batch_size 1000 ttl 86400000}}]
   (let [full-path-cache (atom #{})
         conn (esr/connect url)
         dontexistsfn (dont-exist conn index ES_DEF_TYPE)
