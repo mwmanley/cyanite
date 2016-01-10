@@ -20,7 +20,9 @@
                                {:tenant {:type "string"
                                          :index "not_analyzed"}
                                 :path   {:type "string"
-                                         :index "not_analyzed"}}}})
+                                         :index "not_analyzed"}}
+                               :_timestamp {:enabled true
+                                            :store true}}})
 ;cache disabled, see impact of batching
 (def ^:const store-to-depth 2)
 (def sub-path-cache (atom #{}))
@@ -152,16 +154,12 @@
            (let [ps (<! es-chan-p)
                  cache @full-path-cache]
              (dontexistsfn
-              (remove cache ps)
+              ps
               (fn [[exist dont]]
                 (go-catch
                   (debug "Full Paths Fnd " (count exist) ", creating " (count dont))
                   (doseq [p dont]
-                    (>! checked-paths p))
-                  (when (seq exist)
-                    (swap! full-path-cache
-                           clojure.set/union
-                           (set exist))))))))
+                    (>! checked-paths p)))))))
           (go-forever
            (let [ps (<! checked-paths-p)]
              (go-catch
@@ -176,14 +174,7 @@
                 (go-catch
                  (debug "Fnd " (count exist) ", creating " (count dont))
                  (doseq [p dont]
-                   (>! create-path p))
-                 (when (seq exist)
-                   (let [cached-sub-paths @sub-path-cache
-                         sub-paths-to-store ((comp set (partial map :path) filter)
-                                             #(and (>= store-to-depth (:depth %))
-                                                   (not (cached-sub-paths (:path %))))
-                                             exist)]
-                     (swap! sub-path-cache clojure.set/union sub-paths-to-store))))))))
+                   (>! create-path p)))))))
           (go-forever
            (let [ps (<! create-path-p)]
              (bulkupdatefn ps)))
